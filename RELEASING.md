@@ -2,11 +2,13 @@
 
 ## Current build
 
-- **Version:** 1.0.2, frozen Thu Nov 26, 2026 on branch `dev-1.0.2` (a fresh repository history; the page is 1.0.1 with the version number changed)
-- **dryrun.html SHA-256:** `97137db2f32c501316183b4b1cb4dc6854d55a304676c29e50f2806ffcb6592f` (1,468,933 bytes)
-- **Content ID:** `bafkreiexcn63f4zmkajrmgb3jmoljxdiktkvumcgo3bj4uhsqbx7znszf4`
-- **Offline cache name:** `dryrun-1.0.2`
-- **Tests at freeze:** build 15/15, core 202/202, screens 18/18, simulator 274/274, offline 7/7, money (fast) all pass
+- **Version:** 1.1.0, frozen Thu Nov 26, 2026 on branch `dev-1.1.0`
+- **dryrun.html SHA-256:** `bbd4e41b582445403476eaae6d592d92e32d02b6de163018fafa2a6c1922ba8b` (1,474,553 bytes)
+- **Content ID:** `bafkreif32tsbwwbeivadi5xkvzwvslms4mwqfnw6cyybr6x2fjwbsiv2rm`
+- **Offline cache name:** `dryrun-1.1.0`
+- **Changes:** three new lessons, a practice wallet with five sample transactions, no real signing (a seed that is not public signs only practice), 40 px touch buttons. SeedSigner 0.8.7 is still the newest release.
+- **Review:** one fresh review of the 1.1.0 changes; its 7 findings fixed in one round (commit ca31a56)
+- **Tests at freeze:** build 15/15, core 206/206, screens 18/18, simulator 244/244, offline 7/7, money (fast) all pass. The money code did not change, so the mutation run of 1.0.0 still applies.
 
 ## Steps
 

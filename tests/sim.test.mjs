@@ -1218,8 +1218,8 @@ SCEN.practice_tx = async (t, d, ctx, page) => {   // Testnet, no lesson: the PRA
 };
 SCEN.lessons_dice = async (t, d, ctx, page) => {
   const rolls = '1'.repeat(50), exp = diceWords(rolls, 12).split(' ');
-  t(await d.ev(() => SS_LEARN_LESSONS.length === 6 && SS_LEARN_LESSONS.every((l) => l.name && l.note && l.end && l.steps.every((s) => s.do && s.see && typeof s.at === 'function')) && /They work with the seed loaded on the device, real or practice; with none loaded, they load the public test seed abandon \.\.\. about/.test(document.getElementById('ssLearn').textContent)),
-    'lessons: six lessons next to the device, each step with plain text and a "what you should see" line; the panel says they use the seed on the device, or the public test seed when none is loaded (v2.17.0)');
+  t(await d.ev(() => SS_LEARN_LESSONS.length === 9 && SS_LEARN_LESSONS.every((l) => l.name && l.note && l.end && l.steps.every((s) => s.do && s.see && typeof s.at === 'function')) && /They work with the seed loaded on the device, real or practice; with none loaded, they load the public test seed abandon \.\.\. about/.test(document.getElementById('ssLearn').textContent)),
+    'lessons: nine lessons next to the device (six, and three new in 1.1.0), each step with plain text and a "what you should see" line; the panel says they use the seed on the device, or the public test seed when none is loaded (v2.17.0)');
   let words = [];
   const answer = async (d) => {
     for (let n = 0; n < 14; n++) {

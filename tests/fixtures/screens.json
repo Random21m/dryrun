@@ -1,0 +1,58 @@
+{
+ "Home": {
+  "view": "SSMainMenuView",
+  "hash": "7841398a0a61b79a"
+ },
+ "Home after down and up": {
+  "view": "SSMainMenuView",
+  "hash": "7841398a0a61b79a"
+ },
+ "Seeds": {
+  "view": "SSLoadSeedView",
+  "hash": "94cf30abb1a1d783"
+ },
+ "Seeds > Enter 12-word seed": {
+  "view": "SSSeedMnemonicEntryView",
+  "hash": "c51948682a6d01c5"
+ },
+ "Tools": {
+  "view": "SSToolsMenuView",
+  "hash": "98b90d605ac0c59d"
+ },
+ "Tools > New seed (image)": {
+  "view": "SSCameraConnectionErrorView",
+  "hash": "d7b5fc209452df3a"
+ },
+ "Tools > New seed with dice": {
+  "view": "SSToolsDiceEntropyMnemonicLengthView",
+  "hash": "b2a35efe56789283"
+ },
+ "Tools > dice, 12 words": {
+  "view": "SSToolsDiceEntropyEntryView",
+  "hash": "d95109262eab2ed5"
+ },
+ "Tools > Calc 12th word": {
+  "view": "SSToolsCalcFinalWordNumWordsView",
+  "hash": "8aa9fa09ff495bfc"
+ },
+ "Tools > Address explorer": {
+  "view": "SSToolsAddressExplorerSelectSourceView",
+  "hash": "76556fb3bbc5f66e"
+ },
+ "Settings": {
+  "view": "SSSettingsMenuView",
+  "hash": "414db06af4b16f4f"
+ },
+ "Settings > second entry": {
+  "view": "SSSettingsEntryUpdateSelectionView",
+  "hash": "d420d590d9cd58d9"
+ },
+ "Settings > Advanced": {
+  "view": "SSSettingsMenuView",
+  "hash": "167a08316ca42efa"
+ },
+ "Home, then KEY3": {
+  "view": "SSCameraConnectionErrorView",
+  "hash": "d7b5fc209452df3a"
+ }
+}

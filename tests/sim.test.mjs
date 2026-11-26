@@ -1,0 +1,1658 @@
+// DRYRUN: the original page's simulator test (tests/simulator.test.mjs at v2.18.0), run against dryrun.html. Changes for DRYRUN: the device
+// is in the PRACTICE tab and on at load (openPage restarts it after the probe is in), CLEAR ALL is the one page wipe (no auto-clear or
+// END SESSION), and the scenarios about the original page's own page (forge, damascus, loadreal, loadedge, find, the MAKE A SEED part of
+// offline, the the original page layout checks of phone) are left out. Grid item 6.
+// SeedSigner+ practice simulator test (v2.13.0): the simulator in CHECK A BACKUP (section #ssBox), driven with the device's own
+// buttons (UP DOWN LEFT RIGHT PRESS KEY1 KEY2 KEY3) in a real Chromium, offline, like a person would. Sources: tools/simulator/.
+// Every expected value comes from an independent library (@scure/bip39, @scure/bip32, @scure/btc-signer, jsqr, node:crypto), never
+// from the page's own code. The QR codes the device shows are read back from its screen with jsqr.
+// Scenarios (each in its own browser context, several at a time; a stand-in camera plays one SeedQR, made here with `qrcode`):
+//   dice12      dice rolls -> 12 words as SeedSigner makes them (SHA-256 of the roll string), backup verify, finalize fingerprint,
+//               and the xpub export (zpub QR)
+//   seedqr      load a seed by scanning its SeedQR, then Export as SeedQR: standard and compact (QR read by jsqr), the zoomed view
+//   dice24      99 rolls -> 24 words
+//   words       load 12 words by the on-screen keyboard (KEY2 accepts, impossible letters dimmed), passphrase -> new fingerprint,
+//               Tools > Address explorer (native segwit) for that seed
+//   native / nested / taproot
+//               load a seed by scanning its SeedQR (camera), finalize fingerprint, xpub export QR for the script type,
+//               address explorer: receive and change addresses (list, next page, full address QR) against @scure/btc-signer
+//   settings    every Settings menu at every level: each entry opens, with the right options
+//   tools       Tools > Calc 12th word, Power > Restart, the screensaver
+//   offline     the offline rule: seed QR scanning is refused while the browser is online, works while it is offline
+//   wipe        CLEAR ALL, closing the section, the auto-clear and END SESSION clear the simulator; keyboard only with focus
+// Stage 2 (PSBTs, descriptors, address verification, sign message). The PSBTs are built here with @scure/btc-signer; the stand-in
+// camera hands the scanner the QR text (SSDecodeQR.extract_qr_data is replaced), the signed PSBTs and messages are read off the screen:
+//   psbt_p2wpkh / psbt_p2sh / psbt_p2tr
+//               review (overview, math, recipient, change, OP_RETURN), sign, read the signed UR crypto-psbt from the screen QR(s) and
+//               check it with btc-signer + noble (BIP-143 / BIP-341 sighash, signatures, btc-signer's own lowR signature, finalize);
+//               the P2TR PSBT is fed as an animated UR with part 1 missed (finished from fountain-mixed parts)
+//   psbt_msig   2-of-3 P2WSH: change unverified, scan the wallet descriptor, change verified, sign, a cosigner signs with btc-signer, finalize
+//   psbt_msig_bad  a descriptor of other cosigners: "Address Verification Failed", the transaction is discarded
+//   addr_single / addr_taproot / addr_multi
+//               address verification: native receive #3, nested change #2, taproot receive #12, multisig receive #7 (descriptor scan)
+//   signmsg     message signing off, then on in Settings; P2WPKH, P2PKH (two pages) and P2SH-P2WPKH messages checked as
+//               "Bitcoin Signed Message" signatures by public key recovery (noble)
+//   psbt_wipe   CLEAR ALL in the middle of a PSBT flow overwrites the PSBT, signatures, signing key and descriptor keys
+//   review      two quick taps count twice and a held key repeats; regtest bcrt1 addresses in the Address Explorer (from an
+//               xpub); a "bitcoin:" QR with no address goes Home; tr() with a script tree is "Not Yet Implemented"
+// v2.14.0, Learn on the practice signer (lessons and a practice transaction next to the device; nothing on its screen):
+//   lessons_dice / lessons_seed / lessons_tx (sign, then multisig)
+//               the six lessons, driven only with the device keys (and the page buttons a lesson asks for): every step moves on
+//               when the device reaches the expected screen; BACK, NEXT and RESTART LESSON; the dice words, the verified address,
+//               the signed message (noble) and the multisig signature checked here
+//   find        the card under the header is on screen at load (desktop and phone); OPEN PRACTICE SIGNER and MENU > PRACTICE
+//               SIGNER open the box, start the device and focus it
+//   practice_tx PRACTICE TRANSACTION on Testnet: made-up coins (null outpoint, marked as practice), keys, payee and change from
+//               @scure/bip32; signed on the device, read from its screen (jsqr) and verified with btc-signer + noble; CLEAR ALL wipes it
+//   damascus    MAKE A SEED > Damascus: a practice sheet (12 words) and worked example 3 (24 words), LOAD INTO THE PRACTICE SIGNER:
+//               the practice signer opens, nothing is put into its memory, the practice wallet holds up the Standard SeedQR (digits
+//               made here with @scure/bip39) and the page says to choose Scan; Scan on the device gives the fingerprint the page
+//               shows (and @scure/bip32's); anything not marked practice is refused; PUT IT AWAY and CLEAR ALL overwrite the SeedQR
+//   forge       FORGE SEED below the device: with no seed it asks for one; a dice seed made on the device, then a SeedQR seed with
+//               the passphrase "Ab1", go into MAKE A SEED: words, fingerprint (and the device's, "match"), the first receive and
+//               change addresses (@scure/bip39, @scure/bip32, @scure/btc-signer), SeedQR, xpub and watch-only, the PRACTICE banner,
+//               PRACTICE in the downloaded file; two seeds: pick one by fingerprint; CLEAR ALL and closing the box clear it
+// And: the page self-test passes (158/158) in every page opened, and no page error or console error happens in any of them.
+// Run: node tests/simulator.test.mjs        (SCEN=dice12,wipe to run some; SIM_CONC=4 to run fewer at a time)
+import { createRequire } from 'module';
+import { fileURLToPath } from 'url';
+import { createHash } from 'crypto';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+const require = createRequire(import.meta.url);
+const pw = require('playwright-core');
+const QR = require('qrcode');
+const jsQR = require('jsqr');
+const bip39 = require('@scure/bip39');
+const { wordlist } = require('@scure/bip39/wordlists/english');
+const { HDKey } = require('@scure/bip32');
+const btc = require('@scure/btc-signer');
+const here = path.dirname(fileURLToPath(import.meta.url));
+const FILE = 'file://' + (process.env.DR_FILE || path.join(here, '..', 'dryrun.html'));
+const T0 = Date.now();
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const ok = (c, m) => { console.log((c ? 'PASS ' : 'FAIL ') + m); c ? pass++ : fails.push(m); };
+let pass = 0; const fails = []; const pageProblems = []; const badges = new Set();
+
+// ================================================================ expected values (independent libraries only)
+const sha256 = (b) => createHash('sha256').update(b).digest();
+const diceWords = (rolls, n) => bip39.entropyToMnemonic(new Uint8Array(sha256(rolls).subarray(0, n === 12 ? 16 : 32)), wordlist);   // SeedSigner: SHA-256 of the dice string, first 16 or 32 bytes
+const ABANDON = 'abandon '.repeat(11) + 'about';
+const rootOf = (m, pass = '', versions) => HDKey.fromMasterSeed(bip39.mnemonicToSeedSync(m, pass), versions);
+const fpOf = (root) => root.fingerprint.toString(16).padStart(8, '0');
+const VERS = {   // single-sig mainnet extended key versions: xpub, ypub (nested), zpub (native)
+  xpub: { private: 0x0488ade4, public: 0x0488b21e }, ypub: { private: 0x049d7878, public: 0x049d7cb2 }, zpub: { private: 0x04b2430c, public: 0x04b24746 },
+};
+const SCRIPTS = {   // what the simulator calls them -> purpose, key version, address maker
+  native: { label: /^Native Segwit$/, purpose: 84, ver: 'zpub', addr: (pub) => btc.p2wpkh(pub).address },
+  nested: { label: /^Nested Segwit$/, purpose: 49, ver: 'ypub', addr: (pub) => btc.p2sh(btc.p2wpkh(pub)).address },
+  taproot: { label: /^Taproot$/, purpose: 86, ver: 'xpub', addr: (pub) => btc.p2tr(pub.slice(1)).address },   // BIP86: x-only key, no script tree
+};
+const addrOf = (m, pass, kind, chain, i) => SCRIPTS[kind].addr(rootOf(m, pass).derive(`m/${SCRIPTS[kind].purpose}'/0'/0'/${chain}/${i}`).publicKey);
+const shortAddr = (a, i) => i + ':' + a.slice(0, 10) + '...' + a.slice(-10);   // how the address list shows one
+const seedQrDigits = (m) => m.split(' ').map((w) => String(wordlist.indexOf(w)).padStart(4, '0')).join('');   // Standard SeedQR: 4 digits per word
+
+// The stand-in camera: Chromium plays a video of one QR code, the Standard SeedQR of "abandon x11 about" (made by the `qrcode` package).
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'vf-sim-'));
+process.on('exit', () => { try { fs.rmSync(tmp, { recursive: true, force: true }); } catch (e) { /* leave it */ } });
+function y4m(text, file) {
+  const W = 640, H = 480, m = QR.create(text, { errorCorrectionLevel: 'L', mode: 'numeric' }).modules, n = m.size, px = 8, x0 = (W - n * px) >> 1, y0 = (H - n * px) >> 1;
+  const Y = Buffer.alloc(W * H, 235);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) { const mx = Math.floor((x - x0) / px), my = Math.floor((y - y0) / px); if (mx >= 0 && my >= 0 && mx < n && my < n && m.get(my, mx)) Y[y * W + x] = 16; }
+  const uv = Buffer.alloc((W / 2) * (H / 2), 128), frame = Buffer.concat([Buffer.from('FRAME\n'), Y, uv, uv]);
+  fs.writeFileSync(file, Buffer.concat([Buffer.from(`YUV4MPEG2 W${W} H${H} F10:1 Ip A1:1 C420jpeg\n`), frame, frame]));
+}
+const VIDEO = path.join(tmp, 'seedqr.y4m'); y4m(seedQrDigits(ABANDON), VIDEO);
+
+// ================================================================ driving the device
+// v2.15.x: no fixed waits. Every step waits for the device's real state (polled, with generous limits), so a busy machine only
+// makes the run slower, not flaky. A probe (observation only: it changes nothing the device does) notes when the device sits in
+// wait_for() for a key, which keys it waits for, and when it took a key (wait_for() returned it, or check_for_low() /
+// has_any_input() saw it, as the screensaver and the camera loops do). A key tap is pointerdown + pointerup on the real button in
+// one go (a slow mouse click on a busy machine could be taken as a held key, which repeats). After a tap the helper waits until
+// the device took it and is waiting for the next key; a tap the device dropped because it was busy (it keeps a tap only
+// SS_KEY_LATCH_MS, as SeedSigner misses a short press while busy) is tapped again.
+const tapStats = { lost: 0, ignored: 0, slow: 0 };
+function pageProbe() {   // runs in the page, once, before the device starts
+  if (window.__ssw) return;
+  const w = window.__ssw = { tick: 0, in: false, enter: 0, keys: [], ret: null, low: null, hb: null, lticks: 0 };
+  const P = SSHardwareButtons.prototype, wf = P.wait_for;
+  P.wait_for = async function (keys) {
+    const me = ++w.tick; w.in = true; w.enter = me; w.keys = keys || [];
+    try { const r = await wf.call(this, keys); if (r !== SSHardwareButtonsConstants.OVERRIDE && w.ret === null) w.ret = ++w.tick; return r; }
+    finally { if (w.enter === me) w.in = false; }
+  };
+  for (const f of ['check_for_low', 'has_any_input']) { const o = P[f]; P[f] = function (...a) { const r = o.apply(this, a); if (r && w.low === null) w.low = ++w.tick; return r; }; }
+  const tick = ssLearnTick; ssLearnTick = function (...a) { w.lticks++; return tick.apply(this, a); };   // the lesson panel's 200 ms check
+  // waiting in wait_for() with no key held and no tap it could still take
+  window.__ssIdle = () => {
+    const hb = SSHardwareButtons._instance; if (!w.in || !hb) return false;
+    const now = Date.now();
+    for (const k of SSHardwareButtonsConstants.ALL_KEYS) if (hb._held[k] || (hb._pending[k] && now - hb._pend_at[k] < SS_KEY_LATCH_MS)) return false;
+    return true;
+  };
+  window.__ssMark = (key) => { w.ret = null; w.low = null; w.hb = SSHardwareButtons._instance; return w.hb ? (w.hb._down_at[key] ?? -1) : null; };
+  window.__ssClick = (id) => {   // the real button's own pointer handlers: down and up at once
+    const b = document.getElementById(id), r = b.getBoundingClientRect();
+    if (!r.width || !r.height) throw new Error('the device key ' + id + ' is not on screen');
+    const o = { bubbles: true, cancelable: true, composed: true, button: 0, buttons: 1, pointerId: 1, pointerType: 'mouse', isPrimary: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2 };
+    b.dispatchEvent(new PointerEvent('pointerdown', o)); b.dispatchEvent(new PointerEvent('pointerup', { ...o, buttons: 0 }));
+  };
+  // where a tap is: 'waiting' (the device may still take it), 'busy' (taken, the device is not waiting for a key yet), 'settled'
+  // (taken, and the device waits for the next key), 'ignored' (the screen does not listen to that key), 'lost' (dropped: tap again)
+  window.__ssTapState = (key, before) => {
+    const hb = w.hb, c = SSController._instance, now = Date.now(), down = hb ? hb._down_at[key] : undefined;
+    if (!hb || down === undefined || down === before) return 'lost';   // the tap never reached the device
+    if (hb.cur_input === key && hb.cur_input_started >= down) return w.ret !== null && w.in && w.enter > w.ret && window.__ssIdle() ? 'settled' : 'busy';
+    if (w.low !== null) return w.in && !(c && c.is_screensaver_running) && window.__ssIdle() ? 'settled' : 'busy';
+    if (hb._held[key] || now - down < SS_KEY_LATCH_MS || (hb._pending[key] && now - hb._pend_at[key] < SS_KEY_LATCH_MS)) return 'waiting';
+    return w.in && SSHardwareButtons._instance === hb && !w.keys.includes(key) ? 'ignored' : 'lost';
+  };
+}
+// polls f() until it gives a truthy value or ms have passed; returns the last value
+async function until(f, ms = 60000, every = 100) { const t0 = Date.now(); let v; for (;;) { v = await f(); if (v || Date.now() - t0 > ms) return v; await sleep(every); } }
+async function openPage(browser, tag, o = {}) {
+  const ctx = await browser.newContext({ viewport: { width: 1100, height: 900 } });
+  if (o.offline !== false) await ctx.setOffline(true);
+  const page = await ctx.newPage();
+  page.on('pageerror', (e) => pageProblems.push(tag + ' pageerror: ' + e.message));
+  page.on('console', (m) => { if (m.type() === 'error' && !/willReadFrequently/.test(m.text())) pageProblems.push(tag + ' console.error: ' + m.text().slice(0, 200)); });
+  page.on('dialog', (d) => d.accept());
+  if (o.clock) await page.clock.install();
+  await page.goto(FILE);
+  await page.waitForFunction(() => window.selfTestDone !== undefined, null, { timeout: 90000 });
+  await page.evaluate(() => window.selfTestDone);
+  await page.evaluate(pageProbe);
+  badges.add((await page.textContent('#selfTestBadge')).trim());
+  await page.evaluate(() => showTab('practice'));
+  // DRYRUN: the device is on at load, before the probe went in: switch it off and on again, so the probe sees every key wait
+  await page.waitForFunction(() => document.getElementById('ssBox').open && !!SSController._instance, null, { timeout: 60000 });
+  await page.evaluate(() => { document.getElementById('ssBox').open = false; });
+  await page.waitForFunction(() => !ssPageOn && !SSController._instance, null, { timeout: 60000 });
+  await page.evaluate(() => { const b = document.getElementById('ssBox'); b.open = true; b.scrollIntoView(); });
+  return { ctx, page, d: device(page) };
+}
+const KEYID = { UP: 'ssKUp', DOWN: 'ssKDown', LEFT: 'ssKLeft', RIGHT: 'ssKRight', PRESS: 'ssKPress', K1: 'ssK1', K2: 'ssK2', K3: 'ssK3' };
+const HWKEY = { UP: 'KEY_UP', DOWN: 'KEY_DOWN', LEFT: 'KEY_LEFT', RIGHT: 'KEY_RIGHT', PRESS: 'KEY_PRESS', K1: 'KEY1', K2: 'KEY2', K3: 'KEY3' };
+function device(page) {
+  const d = {
+    ev: (f, a) => page.evaluate(f, a),
+    idle: (ms = 60000) => until(() => page.evaluate(() => !!(window.__ssIdle && window.__ssIdle())), ms, 25),   // the device waits for a key
+    // one tap of a device key (act does it: the case button, or the computer keyboard), then wait until the device took it and
+    // waits for the next key (up to 90 s: a scan or a signature takes a while on a busy machine)
+    async tap(k, act) {
+      const key = HWKEY[k];
+      for (let n = 0; n < 6; n++) {
+        await d.idle(60000);
+        const before = await page.evaluate((key) => window.__ssMark(key), key);
+        if (before === null) return 'off';
+        await act();
+        const t0 = Date.now(); let r;
+        for (;;) {
+          r = await page.evaluate(([key, before]) => window.__ssTapState(key, before), [key, before]);
+          if (r === 'settled' || r === 'ignored' || r === 'lost' || Date.now() - t0 > 90000) break;
+          await sleep(20);
+        }
+        if (r === 'lost') { tapStats.lost++; continue; }
+        if (r === 'ignored') tapStats.ignored++; else if (r !== 'settled') tapStats.slow++;
+        return r;
+      }
+      throw new Error('the device never took ' + k + ' (6 taps), at ' + JSON.stringify(await d.state()));
+    },
+    press: (k) => d.tap(k, () => page.evaluate((id) => window.__ssClick(id), KEYID[k])),
+    key: (name, k) => d.tap(k, () => page.keyboard.press(name)),   // a key of the computer's keyboard (device focused): name as Playwright says it
+    async state() {
+      return page.evaluate(() => {
+        const c = SSController._instance; if (!c) return null;
+        const x = c.current_destination, v = x && x.view, s = v && v.screen;
+        return { view: x && x.View_cls && x.View_cls.name, screen: s && s.constructor.name, title: s && s.title, sel: s && s.selected_button,
+          labels: s && s.button_data ? s.button_data.map((b) => typeof b === 'string' ? b : (b && (b.button_label || b.label))) : null,
+          text: s && s.text, headline: s && s.status_headline };
+      });
+    },
+    async waitView(name, ms = 90000) {   // the view (or screen) shows, and the device waits for a key on it
+      const t = Date.now(); let s;
+      while (Date.now() - t < ms) {
+        s = await d.state();
+        if (s && (s.view === name || s.screen === name)) { await d.idle(30000); const s2 = await d.state(); return s2 && (s2.view === name || s2.screen === name) ? s2 : s; }
+        await sleep(100);
+      }
+      throw new Error('timeout waiting for ' + name + ', at ' + JSON.stringify(s));
+    },
+    kbInfo: (name) => page.evaluate((name) => { const kb = SSController._instance.current_destination.view.screen[name || 'keyboard']; return { sel: [kb.selected_key.x, kb.selected_key.y], keys: kb.keys.map((r) => r.map((k) => ({ l: k.letter, c: k.code, a: k.is_active }))) }; }, name),
+    async kbGo(ch, o = {}) {   // moves the keyboard selection to the key (a letter, or {x, y}) and presses it
+      for (let n = 0; n < 40; n++) {
+        const { sel, keys } = await d.kbInfo(o.kb); let ty = -1, tx = -1;
+        if (typeof ch === 'object') { tx = ch.x; ty = ch.y; } else keys.forEach((r, y) => r.forEach((k, x) => { if (k.l === ch || k.c === ch) { ty = y; tx = x; } }));
+        if (ty < 0) throw new Error('no key ' + ch);
+        if (sel[1] < ty) await d.press('DOWN'); else if (sel[1] > ty) await d.press('UP');
+        else if (sel[0] < tx) await d.press('RIGHT'); else if (sel[0] > tx) await d.press('LEFT');
+        else { await d.press('PRESS'); return; }
+      }
+      throw new Error('keyboard stuck at ' + ch);
+    },
+    async type(word) {   // types letters (the keyboard may already sit on the next one)
+      for (const ch of word) { const kb = await d.kbInfo(); const [x, y] = kb.sel; if (kb.keys[y][x].l !== ch) await d.kbGo(ch); else await d.press('PRESS'); }
+    },
+    async pick(re) {   // selects the button whose label matches and presses it
+      for (let n = 0; n < 30; n++) {
+        const s = await d.state(); const i = (s.labels || []).findIndex((l) => re.test(l || ''));
+        if (i < 0) throw new Error('no button ' + re + ' in ' + JSON.stringify(s));
+        if (s.sel === i) { await d.press('PRESS'); return; }
+        if (s.screen === 'SSMainMenuScreen' || s.screen === 'SSLargeButtonScreen') {   // 2 x 2 grid
+          const [cx, cy] = [s.sel % 2, Math.floor(s.sel / 2)], [tx, ty] = [i % 2, Math.floor(i / 2)];
+          if (s.sel === 1000 || s.sel === null) await d.press('DOWN'); else if (cy < ty) await d.press('DOWN'); else if (cy > ty) await d.press('UP'); else if (cx < tx) await d.press('RIGHT'); else await d.press('LEFT');
+        } else await d.press(s.sel > i ? 'UP' : 'DOWN');
+      }
+      throw new Error('stuck at ' + re);
+    },
+    async back(to) {   // LEFT (the Back button) and PRESS until the wanted view shows
+      for (let n = 0; n < 10; n++) { const s = await d.state(); if (s.view === to) return s; await d.press('LEFT'); await d.press('PRESS'); }
+      throw new Error('could not go back to ' + to + ', at ' + JSON.stringify(await d.state()));
+    },
+    async readQR(ms = 30000) {   // the QR code on the screen, read with jsqr (polled until one is read, up to ms)
+      return until(async () => {
+        const px = await page.evaluate(() => { const c = document.getElementById('ssScreen'), g = c.getContext('2d'), i = g.getImageData(0, 0, c.width, c.height); return { w: c.width, h: c.height, d: Array.from(i.data) }; });
+        const r = jsQR(Uint8ClampedArray.from(px.d), px.w, px.h);
+        return r ? { text: r.data, bytes: Buffer.from(r.binaryData || []).toString('hex') } : null;
+      }, ms, 200);
+    },
+    scr: (f) => page.evaluate(f),
+    lessonTicks: async (n = 2) => { const t0 = await page.evaluate(() => window.__ssw.lticks); return until(() => page.evaluate((m) => window.__ssw.lticks >= m, t0 + n), 30000, 50); },   // the lesson panel checked the device n more times
+    async loadByScan() {   // Home > Scan reads the SeedQR (abandon x11 about) from the stand-in camera, then Finalize > Done
+      await d.waitView('SSMainMenuView'); await d.pick(/^Scan$/);
+      const s = await d.waitView('SSSeedFinalizeView');
+      const fp = await d.scr(() => SSController._instance.current_destination.view.screen.fingerprint);
+      await d.pick(/^Done$/); return { fp, s };
+    },
+  };
+  return d;
+}
+
+// ================================================================ scenarios
+const SCEN = {};
+
+// ---- dice rolls -> words, as SeedSigner does it; backup verify; finalize; xpub export; SeedQR
+async function diceRun(d, n, rolls) {
+  await d.waitView('SSMainMenuView'); await d.pick(/^Tools$/);
+  await d.press('DOWN'); await d.press('PRESS');   // the second "New seed" is the dice one
+  await d.pick(new RegExp(n + ' words'));
+  await d.waitView('SSToolsDiceEntropyEntryScreen');
+  for (let i = 0; i < rolls.length; i++) { const k = +rolls[i] - 1; await d.kbGo({ x: k % 3, y: Math.floor(k / 3) }); }
+  await d.waitView('SSSeedWordsWarningView'); await d.press('PRESS');
+  const words = [];
+  for (let p = 0; p < n / 4; p++) { await d.waitView('SSSeedWordsScreen'); words.push(...await d.scr(() => SSController._instance.current_destination.view.screen.words)); await d.press('PRESS'); }
+  return words;
+}
+SCEN.dice12 = async (t, d, ctx) => {
+  const rolls = '123456'.repeat(9).slice(0, 50), exp = diceWords(rolls, 12), root = rootOf(exp), fp = fpOf(root);
+  const words = await diceRun(d, 12, rolls);
+  t(words.join(' ') === exp, 'dice: 50 rolls give the 12 words SeedSigner makes (' + exp.split(' ').slice(0, 3).join(' ') + ' ...)');
+  // backup verify: the right word every time, then the success screen
+  await d.waitView('SSSeedWordsBackupTestPromptView'); await d.pick(/Verify/);
+  const asked = [];
+  for (let n = 0; n < 14; n++) {
+    const s = await d.state(); if (s.view !== 'SSSeedWordsBackupTestView') break;
+    const cur = await d.scr(() => SSController._instance.current_destination.view.cur_index);
+    asked.push(cur); await d.pick(new RegExp('^' + words[cur] + '$'));
+  }
+  let s = await d.state();
+  t(new Set(asked).size === 12 && s.view === 'SSSeedWordsBackupTestSuccessView' && /Backup Verified/.test(s.title), 'backup verify: every one of the 12 words is asked once, the right answers give "Backup Verified" (asked ' + asked.length + ', ' + new Set(asked).size + ' different)');
+  await d.press('PRESS');
+  s = await d.waitView('SSSeedFinalizeView');
+  const shown = await d.scr(() => SSController._instance.current_destination.view.screen.fingerprint);
+  t(shown === fp, 'finalize: shows the fingerprint ' + fp + ' (shows ' + shown + ')');
+  await d.pick(/^Done$/); s = await d.state();
+  t(s.view === 'SSSeedOptionsView' && s.title === fp, 'the seed is stored under its fingerprint ' + fp);
+  // xpub export (native segwit, static QR): the QR holds [fingerprint/path]zpub
+  await xpubExport(t, d, 'native', exp, fp);
+};
+SCEN.seedqr = async (t, d) => {   // Seeds > fingerprint > Backup seed > Export as SeedQR, standard and compact, and the zoomed view
+  const { fp } = await d.loadByScan();
+  await seedQrChecks(t, d, ABANDON, fp);
+};
+async function xpubExport(t, d, kind, mnemonic, fp) {
+  const S = SCRIPTS[kind], path = `m/${S.purpose}'/0'/0'`, want = rootOf(mnemonic, '', VERS[S.ver]).derive(path).publicExtendedKey;   // zpub / ypub / xpub as the script type needs
+  await d.pick(/Export xpub/);
+  for (let n = 0; n < 8; n++) {
+    await d.idle(); const s = await d.state();
+    if (s.screen === 'SSQRDisplayScreen') break;
+    if (s.view === 'SSSeedExportXpubSigTypeView') await d.pick(/Single Sig/);
+    else if (s.view === 'SSSeedExportXpubScriptTypeView') await d.pick(S.label);
+    else if (s.view === 'SSSeedExportXpubQRFormatView') await d.pick(/Static/);
+    else if (s.view === 'SSSeedExportXpubWarningView') await d.press('PRESS');
+    else if (s.view === 'SSSeedExportXpubDetailsView') {
+      const det = await d.scr(() => { const sc = SSController._instance.current_destination.view.screen; return { fp: sc.fingerprint, path: sc.derivation_path, xpub: sc.xpub }; });
+      t(det.fp === fp && det.path === path && det.xpub === want, 'xpub details (' + kind + '): ' + fp + ' ' + path + ' ' + want.slice(0, 12) + '... (shows ' + det.path + ' ' + String(det.xpub).slice(0, 12) + '...)');
+      await d.press('PRESS');
+    } else await d.press('PRESS');
+  }
+  const q = await d.readQR();
+  t(q && q.text === `[${fp}/${path.slice(2)}]${want}`, 'xpub QR (' + kind + ', static): [' + fp + '/' + path.slice(2) + ']' + want.slice(0, 12) + '... read with jsqr' + (q && q.text !== `[${fp}/${path.slice(2)}]${want}` ? ' (got ' + q.text.slice(0, 40) + ')' : ''));
+  await d.press('RIGHT');   // leaves the QR screen
+}
+async function seedQrChecks(t, d, mnemonic, fp) {
+  const entropy = Buffer.from(bip39.mnemonicToEntropy(mnemonic, wordlist)).toString('hex'), n = mnemonic.split(' ').length;
+  for (const [fmt, re, modules, zone] of [['standard', /^Standard/, n === 12 ? 25 : 29, 5], ['compact', /^Compact/, n === 12 ? 21 : 25, n === 12 ? 7 : 5]]) {
+    await d.back('SSMainMenuView');   // Seeds > fingerprint > Backup seed > Export as SeedQR
+    await d.pick(/^Seeds$/); await d.pick(new RegExp(fp)); await d.pick(/Backup seed/); await d.pick(/SeedQR/);
+    await d.waitView('SSSeedTranscribeSeedQRFormatView'); await d.pick(re);
+    for (let k = 0; k < 6; k++) { const s = await d.state(); if (s.view !== 'SSSeedTranscribeSeedQRWarningView') break; await d.press('PRESS'); }
+    await d.waitView('SSSeedTranscribeSeedQRWholeQRView');
+    const q = await d.readQR();
+    if (fmt === 'standard') t(q && q.text === seedQrDigits(mnemonic), 'SeedQR standard (' + modules + 'x' + modules + '): digits ' + seedQrDigits(mnemonic).slice(0, 12) + '... read with jsqr' + (q ? '' : ' (no QR found)'));
+    else t(q && q.bytes === entropy, 'SeedQR compact (' + modules + 'x' + modules + '): the ' + entropy.length / 2 + ' entropy bytes ' + entropy.slice(0, 8) + '... read with jsqr' + (q ? '' : ' (no QR found)'));
+    await d.press('PRESS');   // Begin: the zoomed view
+    await d.waitView('SSSeedTranscribeSeedQRZoomedInScreen');
+    const info = () => d.scr(() => { const s = SSController._instance.current_destination.view.screen; return { m: s.num_modules, z: s.modules_per_zone, x: s.cur_zone_x, y: s.cur_zone_y }; });
+    let z = await info(); const zones = Math.ceil(modules / zone);
+    t(z.m === modules && z.z === zone && z.x === 0 && z.y === 0, 'SeedQR zoomed view (' + fmt + '): ' + modules + ' modules in zones of ' + zone + ', starts at A-1');
+    for (let i = 0; i < zones + 1; i++) await d.press('RIGHT');
+    await d.press('DOWN'); z = await info();
+    t(z.x === zones - 1 && z.y === 1, 'SeedQR zoomed view (' + fmt + '): the arrow keys move zone by zone and stop at the edge (zone ' + 'ABCDEF'[z.y] + '-' + (z.x + 1) + ' of ' + zones + ' wide)');
+    await d.press('PRESS');   // exits the zoomed view; the device offers to confirm the SeedQR by scanning it back, or Done
+    await d.waitView('SSSeedTranscribeSeedQRConfirmQRPromptView'); await d.pick(/^Done$/);
+  }
+}
+SCEN.dice24 = async (t, d) => {
+  const rolls = '123456'.repeat(17).slice(0, 99), exp = diceWords(rolls, 24);
+  const words = await diceRun(d, 24, rolls);
+  t(words.length === 24 && words.join(' ') === exp, 'dice: 99 rolls give the 24 words SeedSigner makes (' + exp.split(' ').slice(0, 3).join(' ') + ' ...)');
+  t(bip39.validateMnemonic(words.join(' '), wordlist), 'the 24 words are a valid BIP-39 phrase');
+};
+
+// ---- the word keyboard, a passphrase, Tools > Address explorer
+SCEN.words = async (t, d) => {
+  await d.waitView('SSMainMenuView'); await d.pick(/^Seeds$/);
+  let s = await d.state(); if (s.view !== 'SSLoadSeedView') await d.pick(/Load a seed/);
+  await d.pick(/12.word/);
+  const ws = ABANDON.split(' '); let accepted = 0, dim = null, poss = null;
+  for (let i = 0; i < 12; i++) {
+    const w = ws[i], typed = w === 'abandon' ? 'aba' : 'abo';
+    for (let j = 0; j < typed.length; j++) {
+      await d.type(typed[j]);
+      if (i === 11 && j === 1) dim = await d.scr(() => { const sc = SSController._instance.current_destination.view.screen; return { alpha: sc.possible_alphabet, words: sc.possible_words, off: sc.keyboard.keys.flat().filter((k) => !k.is_active).map((k) => k.letter).join('') }; });
+    }
+    if (i === 11) poss = await d.scr(() => SSController._instance.current_destination.view.screen.possible_words);
+    await d.press('K2');
+    if (i < 11) { s = await d.state(); if (s.screen === 'SSSeedMnemonicEntryScreen') accepted++; }
+  }
+  const wl = (p) => wordlist.filter((x) => x.startsWith(p)), next = new Set(wl('ab').map((x) => x[2]));
+  t(dim && dim.alpha.slice().sort().join('') === [...next].sort().join('') && dim.off === 'abcdefghijklmnopqrstuvwxyz'.split('').filter((c) => !next.has(c)).join(''),
+    'word keyboard: after "ab" only ' + [...next].sort().join('') + ' stay lit (BIP-39 list), the other 20 letters are dimmed');
+  t(dim && JSON.stringify(dim.words) === JSON.stringify(wl('ab')), 'word keyboard: after "ab" the candidates are the ' + wl('ab').length + ' words that start with ab');
+  t(JSON.stringify(poss) === JSON.stringify(wl('abo')) && wl('abo').join() === 'about,above', 'word keyboard: after "abo" the candidates are ' + wl('abo').join(' and '));
+  t(accepted === 11, 'word keyboard: KEY2 accepts the first candidate and moves to the next word (11 of 11 moved on)');
+  s = await d.waitView('SSSeedFinalizeView');
+  const fp = fpOf(rootOf(ABANDON)), shown = await d.scr(() => SSController._instance.current_destination.view.screen.fingerprint);
+  t(shown === fp, 'the 12 typed words give the fingerprint ' + fp + ' (shows ' + shown + ')');
+  // the passphrase: A (capitals, K1 switches) b (lower case) 1 (digits)
+  await d.pick(/Passphrase/);
+  await d.press('K1'); await d.kbGo('A', { kb: 'keyboard_ABC' }); await d.press('K1'); await d.kbGo('b', { kb: 'keyboard_abc' }); await d.press('K2'); await d.kbGo('1', { kb: 'keyboard_digits' });
+  const typed = await d.scr(() => SSController._instance.current_destination.view.screen.passphrase);
+  t(typed === 'Ab1', 'passphrase: capitals, lower case and digits keyboards type "Ab1" (' + typed + ')');
+  await d.press('K3'); await d.pick(/^Done$/); s = await d.state();
+  if (s.view === 'SSSeedFinalizeView') { await d.pick(/^Done$/); s = await d.state(); }
+  const fp2 = fpOf(rootOf(ABANDON, 'Ab1'));
+  t(fp2 !== fp && s.view === 'SSSeedOptionsView' && s.title === fp2, 'the passphrase "Ab1" changes the fingerprint from ' + fp + ' to ' + fp2 + ' (the device says ' + s.title + ')');
+  // Tools > Address explorer for this seed (native segwit)
+  await d.back('SSMainMenuView');
+  await d.pick(/^Tools$/); await d.pick(/Address explorer/); await d.pick(new RegExp(fp2));
+  await d.pick(/Native Segwit/);
+  await explorer(t, d, 'native', ABANDON, 'Ab1', 'Tools > Address explorer, passphrase seed');
+};
+
+// ---- the address explorer: receive and change addresses against @scure/btc-signer
+async function explorer(t, d, kind, mnemonic, pass, label) {
+  const lab = (a) => label + ' (' + kind + ')';
+  let s = await d.state();
+  if (s.view !== 'SSToolsAddressExplorerAddressTypeView') s = await d.waitView('SSToolsAddressExplorerAddressTypeView');
+  for (const [chain, re, name] of [[0, /Receive/, 'receive'], [1, /Change/, 'change']]) {
+    await d.pick(re); await d.waitView('SSToolsAddressExplorerAddressListView');
+    s = await d.state();
+    const want = Array.from({ length: 10 }, (_, i) => shortAddr(addrOf(mnemonic, pass, kind, chain, i), i));
+    const got = (s.labels || []).slice(0, 10);
+    t(JSON.stringify(got) === JSON.stringify(want), lab() + ' first 10 ' + name + ' addresses match @scure/btc-signer (' + addrOf(mnemonic, pass, kind, chain, 0).slice(0, 14) + '... first)' + (JSON.stringify(got) === JSON.stringify(want) ? '' : ' got ' + got[0] + ' wanted ' + want[0]));
+    await d.press('PRESS');   // the first address in full, as a QR code
+    const full = addrOf(mnemonic, pass, kind, chain, 0), q = await d.readQR();
+    const shownAddr = await d.scr(() => SSController._instance.current_destination.view.address);
+    t(shownAddr === full && q && q.text === full, lab() + ' ' + name + ' address 0 in full, and its QR, is ' + full);
+    await d.press('PRESS'); await d.waitView('SSToolsAddressExplorerAddressListView');
+    if (chain === 0) {   // the Next button shows addresses 10 to 19
+      await d.pick(/^Next 10$/); s = await d.waitView('SSToolsAddressExplorerAddressListView');
+      const want2 = Array.from({ length: 10 }, (_, i) => shortAddr(addrOf(mnemonic, pass, kind, 0, 10 + i), 10 + i));
+      t(JSON.stringify((s.labels || []).slice(0, 10)) === JSON.stringify(want2), lab() + ' next page: receive addresses 10 to 19 match');
+      await d.back('SSToolsAddressExplorerAddressTypeView');
+    } else await d.back('SSToolsAddressExplorerAddressTypeView');
+  }
+}
+for (const kind of ['native', 'nested', 'taproot']) {
+  SCEN[kind] = async (t, d) => {
+    const { fp, s } = await d.loadByScan();
+    const root = rootOf(ABANDON);
+    const st = await d.state();
+    t(fp === fpOf(root) && st.view === 'SSSeedOptionsView' && st.title === fpOf(root), 'scanning the SeedQR loads abandon x11 about: finalize and the seed list show ' + fpOf(root));
+    await xpubExport(t, d, kind, ABANDON, fpOf(root));
+    await d.pick(/^Seeds$/); await d.pick(new RegExp(fpOf(root)));
+    await d.pick(/Address explorer/);
+    await d.pick(SCRIPTS[kind].label);
+    await explorer(t, d, kind, ABANDON, '', 'Seed > Address explorer');
+  };
+}
+
+// ---- Settings, every level
+const SET_ADV = {
+  'Bitcoin network': ['Mainnet', 'Testnet', 'Regtest'], 'QR code density': ['Low', 'Medium', 'High'], 'Sig types': ['Single Sig', 'Multisig'],
+  'Script types': ['Native Segwit', 'Nested Segwit', 'Legacy', 'Taproot', 'Custom Derivation'], 'Xpub QR format': ['Animated (default)', 'Static', 'Specter legacy'],
+  'Show xpub details': ['Enabled', 'Disabled'], 'BIP-39 passphrase': ['Enabled', 'Disabled', 'Required'], 'Camera rotation': ['0°', '90°', '180°', '270°'],
+  'Compact SeedQR': ['Enabled', 'Disabled'], 'BIP-85 child seeds': ['Enabled', 'Disabled'], 'Electrum seeds': ['Enabled', 'Disabled'],
+  'MicroSD notification duration': ['Disabled', '5 seconds', 'Until SD removed'], 'Message signing': ['Enabled', 'Disabled'], 'Show privacy warnings': ['Enabled', 'Disabled'],
+  'Show dire warnings': ['Enabled', 'Disabled'], 'Show QR brightness tips': ['Enabled', 'Disabled'], 'Show partner logos': ['Enabled', 'Disabled'],
+};
+SCEN.settings = async (t, d) => {
+  await d.waitView('SSMainMenuView'); await d.pick(/^Settings$/);
+  const seen = {}, entries = {}; const back = async () => { await d.press('LEFT'); await d.press('PRESS'); };
+  const walk = async (path) => {
+    let s = await d.state(); const title = s.title, labels = s.labels.slice(), here = path || 'Settings';
+    entries[here] = labels;
+    for (const l of labels) {
+      for (let n = 0; n < 4 && (await d.state()).title !== title; n++) await back();
+      await d.pick(new RegExp('^' + l.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&') + '$'));
+      s = await d.state();
+      if (s.view === 'SSSettingsMenuView' && s.title !== title) { seen[here + ' > ' + l] = 'menu'; await walk(here + ' > ' + l); continue; }
+      seen[here + ' > ' + l] = s.view + (s.labels ? ' ' + s.labels.join('|') : '');
+      if (s.view === 'SSIOTestView') { await d.press('UP'); await d.press('K2'); await d.press('K3'); }
+      else if (s.view === 'SSDonateView') await d.press('PRESS');
+      else await back();
+    }
+    await back();
+  };
+  await walk('');
+  t(JSON.stringify(entries.Settings) === JSON.stringify(['Language', 'Persistent settings', 'Denomination display', 'Advanced', 'I/O test', 'Donate']), 'Settings menu lists Language, Persistent settings, Denomination display, Advanced, I/O test, Donate');
+  const advLabels = entries['Settings > Advanced'] || [];
+  t(Object.keys(SET_ADV).every((k) => advLabels.includes(k)) && advLabels.includes('Hardware'), 'Settings > Advanced lists its ' + (advLabels.length) + ' entries, with Hardware as a submenu');
+  t(JSON.stringify(entries['Settings > Advanced > Hardware']) === JSON.stringify(['Display type', 'Invert colors']), 'Settings > Advanced > Hardware lists Display type and Invert colors');
+  const bad = [];
+  const want = { 'Settings > Language': ['English'], 'Settings > Persistent settings': ['Enabled', 'Disabled'], 'Settings > Denomination display': ['BTC', 'sats', 'Threshold at 0.01', 'BTC | sats hybrid'],
+    'Settings > Advanced > Display type': null };
+  for (const [k, v] of Object.entries(SET_ADV)) want['Settings > Advanced > ' + k] = v;
+  want['Settings > Advanced > Hardware > Display type'] = ['st7789 240x240', 'st7789 320x240', 'ili9341 320x240 (beta)']; want['Settings > Advanced > Hardware > Invert colors'] = ['Enabled', 'Disabled'];
+  delete want['Settings > Advanced > Display type'];
+  for (const [k, v] of Object.entries(want)) { const g = seen[k]; if (!g || !/^SSSettingsEntryUpdateSelectionView|^SSLocaleSelectionView/.test(g) || g.split(' ').slice(1).join(' ') !== v.join('|')) bad.push(k + ' -> ' + g); }
+  t(bad.length === 0, 'every Settings entry opens its selection screen with the right options (' + Object.keys(want).length + ' entries)' + (bad.length ? ' BAD: ' + bad.slice(0, 3).join('; ') : ''));
+  t(/SSIOTestView/.test(seen['Settings > I/O test']) && /SSDonateView/.test(seen['Settings > Donate']), 'I/O test and Donate screens open and close');
+  let s = await d.state(); const seenViews = [s.view]; for (let n = 0; n < 4 && s.view !== 'SSMainMenuView'; n++) { await back(); s = await d.state(); seenViews.push(s.view); }
+  t(s.view === 'SSMainMenuView', 'after the walk, Back leads to Home (' + seenViews.join(' > ') + ')');
+};
+
+// ---- Calc 12th word, Power > Restart, the screensaver
+SCEN.tools = async (t, d) => {
+  await d.waitView('SSMainMenuView'); await d.pick(/^Tools$/); await d.pick(/Calc 12th/); await d.pick(/12 words/);
+  for (let i = 0; i < 11; i++) { await d.type('aba'); await d.press('K2'); }
+  let got = null, fin = [];
+  for (let n = 0; n < 6; n++) {
+    await d.idle(); const s = await d.state();
+    if (s.view === 'SSToolsCalcFinalWordFinalizePromptView') await d.pick(/zero|0|Finalize/i);
+    else if (s.view === 'SSToolsCalcFinalWordShowFinalWordView') {
+      got = await d.scr(() => { const sc = SSController._instance.current_destination.view.screen; return { w: sc.actual_final_word, bits: sc.selected_final_bits, cs: sc.checksum_bits }; });
+      await d.press('PRESS');
+    } else if (s.view === 'SSToolsCalcFinalWordDoneView') await d.press('PRESS');
+    else break;
+  }
+  const ent = new Uint8Array(16), mn = bip39.entropyToMnemonic(ent, wordlist), cs = (sha256(Buffer.from(ent))[0] >> 4).toString(2).padStart(4, '0');
+  t(got && got.w === mn.split(' ')[11] && got.w === 'about', 'Calc 12th word: abandon x11 with zero bits gives "' + mn.split(' ')[11] + '" (' + (got && got.w) + ')');
+  t(got && got.cs === cs, 'Calc 12th word: the checksum bits are ' + cs + ' (SHA-256 of 16 zero bytes), the device says ' + (got && got.cs));
+  for (let n = 0; n < 6 && (await d.state()).view !== 'SSMainMenuView'; n++) { await d.press('LEFT'); await d.press('PRESS'); }
+  const before = await d.ev(() => SSController._instance.storage.seeds.length);
+  await d.press('LEFT'); await d.press('UP'); await d.press('PRESS');
+  let s = await d.state(); t(s.view === 'SSPowerOptionsView' || /Power/i.test(String(s.view) + s.title), 'the Power button opens the power menu (' + s.view + ')');
+  await d.pick(/Restart/);
+  await d.waitView('SSMainMenuView');
+  const after = await d.ev(() => SSController._instance.storage.seeds.length);
+  t(after === 0 && before >= after, 'Restart: the device starts again with no seeds in memory (' + before + ' before, ' + after + ' after)');
+  // the screensaver starts after 2 minutes without a key (the page's clock is fast-forwarded) and a key ends it
+  await d.ev(() => 0);
+  await d.page_clock();
+  await until(() => d.ev(() => SSController._instance.is_screensaver_running), 30000);
+  t(await d.ev(() => SSController._instance.is_screensaver_running) === true, 'screensaver: runs after 2 minutes idle');
+  await d.press('DOWN');
+  t(await d.ev(() => SSController._instance.is_screensaver_running) === false, 'screensaver: a key press ends it');
+};
+
+// ---- the offline rule
+SCEN.offline = async (t, d, ctx, page) => {
+  t(await d.ev(() => navigator.onLine) === true, 'this browser context is online (navigator.onLine)');
+  await d.waitView('SSMainMenuView');
+  // v2.17.0 review (the owner's "no restrictions" rule): online, Seeds > Scan a SeedQR starts; the stand-in camera's SeedQR is the
+  // public test seed abandon ... about, loaded with no question
+  await page.evaluate(() => { window.__q = []; window.__yes = false; window.__c0 = window.confirm; window.confirm = (x) => { window.__q.push(x); return window.__yes; }; });
+  await d.pick(/^Seeds$/); await d.pick(/Scan a SeedQR/);
+  let s = await d.waitView('SSSeedFinalizeView');
+  t(await d.ev(() => SSController._instance.current_destination.view.screen.fingerprint) === fpOf(rootOf(ABANDON)) && (await d.ev(() => window.__q.length)) === 0, 'v2.17.0 online: "Scan a SeedQR" starts and reads the public test seed abandon ... about (fingerprint ' + fpOf(rootOf(ABANDON)) + ') with no question');
+  await d.pick(/^Done$/); await d.waitView('SSSeedOptionsView'); await d.back('SSMainMenuView');
+  // a real seed's SeedQR, held up by the practice wallet: the device asks first; No loads nothing ("Not loaded"), Yes loads it
+  const RQ = diceWords('31415265', 12), RQD = RQ.split(' ').map((x) => String(wordlist.indexOf(x)).padStart(4, '0')).join('');
+  const hold = () => page.evaluate((g) => ssLearnShow([g], 'a real SeedQR', 'test'), RQD);
+  await hold(); await d.pick(/^Scan$/); s = await d.waitView('SSErrorView');
+  let q = await d.ev(() => window.__q.slice());
+  t(/^Not loaded$/.test(s.headline) && /You chose not to load this seed while this computer is online/.test(s.text) && q.length === 1 && /^This computer is online\. The practice signer read the SeedQR of a real seed: loading it here is like typing it into a website/.test(q[0]) && !(await d.ev((m) => ssLearnSeeds().some((x) => x.mnemonic_str === m), RQ)), 'v2.17.0 online: a real seed\'s SeedQR read on the device asks first; No loads nothing and the device says "Not loaded" (' + s.headline + ')');
+  await d.press('PRESS'); await d.back('SSMainMenuView');
+  await page.evaluate(() => { window.__yes = true; window.__q.length = 0; }); await hold(); await d.pick(/^Scan$/); s = await d.waitView('SSSeedFinalizeView');
+  q = await d.ev(() => window.__q.slice());
+  t(q.length === 1 && await d.ev(() => SSController._instance.current_destination.view.screen.fingerprint) === fpOf(rootOf(RQ)), 'v2.17.0 online: Yes loads the real seed from its SeedQR (fingerprint ' + fpOf(rootOf(RQ)) + ', @scure/bip32)');
+  await d.pick(/^Done$/); await d.waitView('SSSeedOptionsView'); await d.back('SSMainMenuView');
+  await page.evaluate(() => { window.confirm = window.__c0; });
+};
+
+// ---- wipe: CLEAR ALL, closing the section, the auto-clear, END SESSION; the keyboard only with focus
+SCEN.wipe = async (t, d, ctx, page) => {
+  const keep = () => d.ev(() => { const st = SSController._instance.storage; window.__ssStore = st; st.__seed = st.seeds[0]; st.__bytes = st.seeds[0] && st.seeds[0].seed_bytes; });
+  const isWiped = (r) => r.open === false && r.active === false && r.ctl === false && r.lit === 0 && r.seeds === 0 && r.pending === null && r.words === 0 && r.bytes === false && r.cam === false;
+  const wiped = async () => {
+    let r; await until(async () => isWiped(r = await wipedNow()), 30000); return r;
+  };
+  const wipedNow = async () => {
+    return d.ev(() => {
+      const c = document.getElementById('ssScreen'), g = c.getContext('2d'), px = g.getImageData(0, 0, c.width, c.height).data; let lit = 0;
+      for (let i = 0; i < px.length; i += 4) if (px[i] || px[i + 1] || px[i + 2]) lit++;
+      const st = window.__ssStore;
+      return { open: document.getElementById('ssBox').open, active: ssPageActive(), ctl: !!SSController._instance, lit, seeds: st ? st.seeds.length : -1, pending: st ? st.pending_seed : 'n/a',
+        words: st && st.__seed ? st.__seed._mnemonic.length : -1, bytes: st && st.__bytes ? Array.from(st.__bytes).some((x) => x) : 'n/a', cam: document.body.classList.contains('cam-on') };
+    });
+  };
+  // keyboard: only while the device has focus
+  await d.waitView('SSMainMenuView');
+  await d.ev(() => document.activeElement && document.activeElement.blur());
+  await page.keyboard.press('ArrowRight'); await d.idle();   // without focus: no key reaches the device (a key that did would be taken first)
+  const a = (await d.state()).sel;
+  await page.focus('#ssDevice'); await d.key('ArrowRight', 'RIGHT');
+  const b = (await d.state()).sel;
+  t(a === 0 && b === 1, 'keyboard: the arrow keys do nothing without focus on the device, move the selection with focus (' + a + ' then ' + b + ')');
+  await d.key('Enter', 'PRESS');
+  t(/^SS(SeedsMenu|LoadSeed)View$/.test((await d.state()).view), 'keyboard: Enter presses the joystick, Seeds opens (' + (await d.state()).view + ')');
+  await d.key('ArrowLeft', 'LEFT'); await d.key(' ', 'PRESS');
+  t((await d.state()).view === 'SSMainMenuView', 'keyboard: Left then Space goes back to Home');
+  const open = async () => { await page.evaluate(() => { showTab('practice'); const b = document.getElementById('ssBox'); b.open = true; b.scrollIntoView(); }); };   // loadByScan waits for Home
+  const how = {
+    'CLEAR ALL': () => d.ev(() => clearAll()),
+    'closing the section': () => page.click('#ssBox > summary'),
+  };
+  let first = true;
+  for (const [name, act] of Object.entries(how)) {
+    if (!first) await open(); first = false;
+    const r0 = await d.loadByScan(); await keep();
+    const before = await d.ev(() => SSController._instance.storage.seeds.length);
+    t(before === 1 && r0.fp === fpOf(rootOf(ABANDON)), name + ': a seed is loaded first (' + r0.fp + ')');
+    await act(); const r = await wiped();
+    t(isWiped(r), name + ' clears the simulator: section closed, controller gone, screen black, no seeds, no words, seed bytes zeroed, camera off' + (isWiped(r) ? '' : ' ' + JSON.stringify(r)));
+  }
+};
+
+// ---- v2.15.0: a wipe (CLEAR ALL, auto-clear, END SESSION) wipes the settings on the simulated microSD, and the next start
+// loads the defaults; closing the box keeps settings saved with Persistent settings on, as a real microSD would
+SCEN.settings_wipe = async (t, d, ctx, page) => {
+  const until = async (f, a, ms = 30000) => { const t0 = Date.now(); let v; while (Date.now() - t0 < ms) { v = await d.ev(f, a); if (v) return v; await sleep(150); } return v; };
+  const reopen = async () => { await page.evaluate(() => { showTab('practice'); const b = document.getElementById('ssBox'); b.open = true; b.scrollIntoView(); }); await d.waitView('SSMainMenuView'); };
+  const now = () => d.ev(() => { const C = SSSettingsConstants, s = SSSettings.get_instance(), def = SSSettingsDefinition.get_defaults();
+    def[C.SETTING__DISPLAY_CONFIGURATION] = C.DISPLAY_CONFIGURATION__ST7789__320x240;   // the SeedSigner+ start value (see SSSettings.get_instance)
+    return { net: s.get_value(C.SETTING__NETWORK), msg: s.get_value(C.SETTING__MESSAGE_SIGNING), keep: s.get_value(C.SETTING__PERSISTENT_SETTINGS),
+      card: SS_SIM_MICROSD.settings_json !== null, defaults: JSON.stringify(s._data) === JSON.stringify(def) }; });
+  const change = () => d.ev(() => { const C = SSSettingsConstants, s = SSSettings.get_instance();
+    s.set_value(C.SETTING__PERSISTENT_SETTINGS, C.OPTION__ENABLED); s.set_value(C.SETTING__NETWORK, C.TESTNET); s.set_value(C.SETTING__MESSAGE_SIGNING, C.OPTION__ENABLED); });
+  await d.waitView('SSMainMenuView');
+  let s = await now();
+  t(s.defaults && s.net === 'M' && !s.card, 'settings: a first start has the defaults (Mainnet, nothing on the microSD) ' + JSON.stringify(s));
+  await change(); s = await now();
+  t(s.net === 'T' && s.msg === 'E' && s.keep === 'E' && s.card && !s.defaults, 'settings: Testnet, message signing and Persistent settings on, saved to the microSD ' + JSON.stringify(s));
+  await page.click('#ssBox > summary'); await until(() => !ssPageOn && !SSController._instance);
+  await reopen(); s = await now();
+  t(s.net === 'T' && s.msg === 'E' && s.keep === 'E' && s.card, 'settings: closing the box and opening it again keeps the settings saved on the microSD ' + JSON.stringify(s));
+  // Persistent settings off removes the file (as SeedSigner removes settings.json): the next start has the defaults again
+  await d.ev(() => SSSettings.get_instance().set_value(SSSettingsConstants.SETTING__PERSISTENT_SETTINGS, SSSettingsConstants.OPTION__DISABLED));
+  t(!(await now()).card, 'settings: Persistent settings off removes the settings file from the microSD');
+  await page.click('#ssBox > summary'); await until(() => !ssPageOn && !SSController._instance);
+  await reopen(); s = await now();
+  t(s.defaults && s.net === 'M' && s.msg === 'D' && s.keep === 'D' && !s.card, 'settings: with the file removed, the next start loads the default settings ' + JSON.stringify(s));
+  for (const [name, act] of [['CLEAR ALL', () => d.ev(() => clearAll())]]) {
+    if (!(await now()).card) await change();
+    await act(); await until(() => !ssPageOn && !SSController._instance && !document.getElementById('ssBox').open);
+    const off = await d.ev(() => ({ card: SS_SIM_MICROSD.settings_json !== null, kept: SSSettings._instance !== null, active: ssPageActive() }));
+    t(!off.card && !off.kept && !off.active, name + ': the settings file on the microSD and the settings in memory are gone ' + JSON.stringify(off));
+    await reopen(); s = await now();
+    t(s.defaults && s.net === 'M' && s.msg === 'D' && s.keep === 'D' && !s.card, name + ': the next start loads the default settings (Mainnet, message signing off, Persistent settings off) ' + JSON.stringify(s));
+  }
+};
+
+// ================================================================ stage 2: PSBTs, descriptors, address verification, sign message
+// The test PSBTs are built here with @scure/btc-signer (mainnet; nothing is committed as a binary). Every expected value comes from
+// btc-signer / @scure/bip32 / @noble/curves, never from the page. The stand-in for the camera's QR reading is a replacement of
+// SSDecodeQR.extract_qr_data (the camera is Chromium's fake one, which plays one SeedQR only): it hands the scanner the QR text of
+// each frame, as a read QR would. What the device shows is read back from its screen (the QR with jsqr, the amounts from its screens).
+const { secp256k1, schnorr } = require('@noble/curves/secp256k1');
+// DRYRUN: the low-R signature as Bitcoin Core (key.cpp) and embit (SeedSigner) make it: RFC 6979, and while R is high, again with
+// the counter 1, 2, 3 ... as 32 bytes little-endian extra data. (@scure/btc-signer's lowR starts its counter at 0, a different
+// signature when grinding is needed: the original page's practice coins never needed it, DRYRUN's do.)
+const coreLowR = (h, priv) => { const sg = (o) => secp256k1.sign(h, priv, { prehash: false, lowS: true, ...o }); let sig = sg({}), c = 1;
+  while (sig.r >= (1n << 255n)) { const e = new Uint8Array(32); e[0] = c & 255; e[1] = (c >>> 8) & 255; e[2] = (c >>> 16) & 255; e[3] = (c >>> 24) & 255; c++; sig = sg({ extraEntropy: e }); }
+  return Uint8Array.from([...sig.toDERRawBytes(), btc.SigHash.ALL]); };
+const { UREncoder, URDecoder } = require('@ngraveio/bc-ur');
+const { CryptoPSBT } = require('@keystonehq/bc-ur-registry');
+const HARD = 0x80000000;
+const pathIdx = (s) => s.split('/').slice(1).map((x) => x.endsWith("'") ? parseInt(x) + HARD : parseInt(x));
+const hx = (b) => Buffer.from(b).toString('hex');
+const b64b = (s) => Uint8Array.from(Buffer.from(s, 'base64'));
+const MN2 = {
+  A: ABANDON, B: 'legal winner thank year wave sausage worth useful legal winner thank yellow',
+  C: 'letter advice cage absurd amount doctor acoustic avoid letter advice cage above', D: 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong',
+};
+const R2 = Object.fromEntries(Object.entries(MN2).map(([k, m]) => [k, rootOf(m)]));
+const FPA = fpOf(R2.A);
+const EXT1 = 'bc1qar0srrr7xfkvy5l643lydnw9re59gtzzwf5mdq', EXT2 = '3J98t1WpEZ73CNmQviecrnyiWrnqRhWNLy';   // outside addresses (BIP-173 / BIP-13 examples)
+const txid2 = (n) => Uint8Array.from({ length: 32 }, (_, i) => (i * 7 + n * 13) & 255);
+const deriv = (root, p) => ({ fingerprint: root.fingerprint, path: pathIdx(p) });
+function buildStage2() {
+  const A = R2.A, out = {};
+  // 1. P2WPKH: two inputs (150,000 + 200,000), a recipient (120,000), change (228,000), an OP_RETURN "hello world"; fee 2,000
+  {
+    const tx = new btc.Transaction({ allowUnknownOutputs: true });
+    for (const [i, p] of [[0, "m/84'/0'/0'/0/0"], [1, "m/84'/0'/0'/0/1"]]) {
+      const k = A.derive(p);
+      tx.addInput({ txid: txid2(i + 1), index: i, witnessUtxo: { script: btc.p2wpkh(k.publicKey).script, amount: 150000n + BigInt(i) * 50000n }, bip32Derivation: [[k.publicKey, deriv(A, p)]] });
+    }
+    tx.addOutputAddress(EXT1, 120000n);
+    const ck = A.derive("m/84'/0'/0'/1/0");
+    tx.addOutput({ script: btc.p2wpkh(ck.publicKey).script, amount: 228000n, bip32Derivation: [[ck.publicKey, deriv(A, "m/84'/0'/0'/1/0")]] });
+    tx.addOutput({ script: Uint8Array.from([0x6a, 0x4c, 11, ...Buffer.from('hello world')]), amount: 0n });
+    out.p2wpkh = { b64: Buffer.from(tx.toPSBT(0)).toString('base64'), keys: ["m/84'/0'/0'/0/0", "m/84'/0'/0'/0/1"], inputs: 2, inSum: 350000, dests: [[EXT1, 120000]], change: [btc.p2wpkh(ck.publicKey).address, 228000, 0, true], fee: 2000, opReturn: 'hello world' };
+  }
+  // 2. P2SH-P2WPKH: one input (2,500,000), a recipient (1,000,000), change at /1/3 (1,499,000); fee 1,000
+  {
+    const tx = new btc.Transaction(), p = "m/49'/0'/0'/0/0", k = A.derive(p), pay = btc.p2sh(btc.p2wpkh(k.publicKey));
+    tx.addInput({ txid: txid2(3), index: 0, witnessUtxo: { script: pay.script, amount: 2500000n }, redeemScript: pay.redeemScript, bip32Derivation: [[k.publicKey, deriv(A, p)]] });
+    tx.addOutputAddress(EXT2, 1000000n);
+    const cp = "m/49'/0'/0'/1/3", ck = A.derive(cp), cpay = btc.p2sh(btc.p2wpkh(ck.publicKey));
+    tx.addOutput({ script: cpay.script, amount: 1499000n, redeemScript: cpay.redeemScript, bip32Derivation: [[ck.publicKey, deriv(A, cp)]] });
+    out.p2sh_p2wpkh = { b64: Buffer.from(tx.toPSBT(0)).toString('base64'), keys: [p], inputs: 1, inSum: 2500000, dests: [[EXT2, 1000000]], change: [cpay.address, 1499000, 3, true], fee: 1000, opReturn: null };
+  }
+  // 3. P2TR key path: one input (300,000), a recipient (100,000), change (199,000); fee 1,000
+  {
+    const tx = new btc.Transaction(), p = "m/86'/0'/0'/0/0", k = A.derive(p), x = k.publicKey.slice(1);
+    tx.addInput({ txid: txid2(4), index: 1, witnessUtxo: { script: btc.p2tr(x).script, amount: 300000n }, tapInternalKey: x, tapBip32Derivation: [[x, { hashes: [], der: deriv(A, p) }]] });
+    tx.addOutputAddress(EXT1, 100000n);
+    const cp = "m/86'/0'/0'/1/0", ck = A.derive(cp), cx = ck.publicKey.slice(1);
+    tx.addOutput({ script: btc.p2tr(cx).script, amount: 199000n, tapInternalKey: cx, tapBip32Derivation: [[cx, { hashes: [], der: deriv(A, cp) }]] });
+    out.p2tr = { b64: Buffer.from(tx.toPSBT(0)).toString('base64'), keys: [p], inputs: 1, inSum: 300000, dests: [[EXT1, 100000]], change: [btc.p2tr(cx).address, 199000, 0, true], fee: 1000, opReturn: null };
+  }
+  // 4. 2-of-3 P2WSH sortedmulti (A, B, C at m/48'/0'/0'/2'): one input (5,000,000) at /0/5, a recipient (3,000,000), change at /1/2 (1,998,000); fee 2,000
+  {
+    const acct = "m/48'/0'/0'/2'", names = ['A', 'B', 'C'], accts = Object.fromEntries(names.map((n) => [n, R2[n].derive(acct)]));
+    const ms = (branch, idx, set = names, hd = accts) => {
+      const ks = set.map((n) => ({ n, pub: hd[n].deriveChild(branch).deriveChild(idx).publicKey }));
+      const sorted = ks.slice().sort((a, b) => Buffer.compare(Buffer.from(a.pub), Buffer.from(b.pub)));
+      return { pay: btc.p2wsh(btc.p2ms(2, sorted.map((x) => x.pub))), ders: ks.map((x) => [x.pub, deriv(R2[x.n], acct + '/' + branch + '/' + idx)]) };
+    };
+    const tx = new btc.Transaction(), i0 = ms(0, 5);
+    tx.addInput({ txid: txid2(5), index: 0, witnessUtxo: { script: i0.pay.script, amount: 5000000n }, witnessScript: i0.pay.witnessScript, bip32Derivation: i0.ders });
+    tx.addOutputAddress(EXT1, 3000000n);
+    const c0 = ms(1, 2);
+    tx.addOutput({ script: c0.pay.script, amount: 1998000n, witnessScript: c0.pay.witnessScript, bip32Derivation: c0.ders });
+    tx.global.xpub = names.map((n) => { const a = accts[n]; return [{ version: 0x0488b21e, depth: a.depth, parentFingerprint: a.parentFingerprint, childNumber: a.index, chainCode: a.chainCode, publicKey: a.publicKey }, { fingerprint: R2[n].fingerprint, path: pathIdx(acct) }]; });
+    const desc = (set, hd) => 'wsh(sortedmulti(2,' + set.map((n) => '[' + fpOf(R2[n]) + '/48h/0h/0h/2h]' + hd[n].publicExtendedKey + '/0/*').join(',') + '))';
+    const accD = { ...accts, D: R2.D.derive(acct) };
+    out.p2wsh_2of3 = { b64: Buffer.from(tx.toPSBT(0)).toString('base64'), keys: [acct + '/0/5'], inputs: 1, inSum: 5000000, dests: [[EXT1, 3000000]], change: [c0.pay.address, 1998000, 2, true], fee: 2000, opReturn: null,
+      descriptor: desc(names, accts), badDescriptor: desc(['A', 'B', 'D'], accD), fps: names.map((n) => fpOf(R2[n])), receive7: ms(0, 7).pay.address, receive0: ms(0, 0).pay.address };
+  }
+  return out;
+}
+const S2 = buildStage2();
+
+// What the device is fed (a base64 PSBT as one QR, or an animated UR crypto-psbt) and how a QR it shows is read back
+const urParts = (rawBytes, maxFrag) => { const e = new UREncoder(new CryptoPSBT(Buffer.from(rawBytes)).toUR(), maxFrag, 0, 10), p = []; for (let i = 0; i < e.fragmentsLength; i++) p.push(e.nextPart().toUpperCase()); return p; };
+async function feedQR(page, frames) {
+  await page.evaluate((frames) => {
+    window.__ssQ = frames.slice();
+    SSDecodeQR.extract_qr_data = function (image, is_binary) { const s = window.__ssQ.shift(); if (s === undefined) return null; return is_binary ? new TextEncoder().encode(s) : s; };
+  }, frames);
+}
+async function scanFrames(d, page, frames, from = /^Scan$/) { await feedQR(page, frames); if (from) await d.pick(from); }
+async function startCapture(page) {   // keeps every different picture the screen shows, so an animated QR can be read part by part
+  await page.evaluate(() => {
+    window.__frames = []; let last = -1; clearInterval(window.__capTimer);
+    window.__capTimer = setInterval(() => {
+      const c = document.getElementById('ssScreen'), g = c.getContext('2d'), im = g.getImageData(0, 0, c.width, c.height), a = im.data; let h = 2166136261;
+      for (let i = 0; i < a.length; i += 11) h = Math.imul(h ^ a[i], 16777619) >>> 0;
+      if (h === last) return; last = h;
+      let s = ''; for (let i = 0; i < a.length; i += 8192) s += String.fromCharCode.apply(null, a.subarray(i, i + 8192));
+      window.__frames.push({ w: c.width, h: c.height, b64: btoa(s) });
+    }, 25);
+  });
+}
+async function readUR(page, ms = 120000) {   // the animated UR on the screen -> the bytes of the crypto-psbt, and the number of parts
+  await startCapture(page);
+  const dec = new URDecoder(), seen = new Set(); let from = 0; const t0 = Date.now();
+  while (Date.now() - t0 < ms && !dec.isComplete()) {
+    const fr = await page.evaluate((f) => window.__frames.slice(f), from); from += fr.length;
+    for (const f of fr) { const q = jsQR(new Uint8ClampedArray(Buffer.from(f.b64, 'base64')), f.w, f.h); if (q && /^ur:/i.test(q.data)) { seen.add(q.data.toLowerCase()); try { dec.receivePart(q.data.toLowerCase()); } catch (e) { /* a part of another UR */ } } }
+    if (!dec.isComplete()) await sleep(150);
+  }
+  await page.evaluate(() => clearInterval(window.__capTimer));
+  if (!dec.isComplete() || !dec.isSuccess()) return null;
+  return { bytes: new Uint8Array(CryptoPSBT.fromCBOR(dec.resultUR().cbor).getPSBT()), parts: seen.size, type: dec.resultUR().type };
+}
+
+// The signatures the device made, checked with btc-signer (signature hashes, own signatures) and @noble/curves, as in tests/sigcheck.test.mjs
+function checkSigned(t, tag, name, signedBytes) {
+  const P = S2[name], orig = btc.Transaction.fromPSBT(b64b(P.b64), { allowUnknownOutputs: true }), ref = btc.Transaction.fromPSBT(b64b(P.b64), { lowR: true, allowUnknownOutputs: true });
+  const signed = btc.Transaction.fromPSBT(signedBytes, { allowUnknownOutputs: true });
+  const verdict = { sigs: 0, ecdsa: true, same: true, hash: true, low: true, key: true, schnorr: true, one: true };
+  for (let i = 0; i < orig.inputsLength; i++) {
+    const inp = orig.getInput(i), s = signed.getInput(i), spk = inp.witnessUtxo.script, amount = inp.witnessUtxo.amount, type = btc.OutScript.decode(spk).type;
+    if (type === 'tr') {
+      const w = s.finalScriptWitness; verdict.one = verdict.one && !!w && w.length === 1 && w[0].length === 64; if (!verdict.one) continue;
+      const amounts = [], scripts = [];
+      for (let j = 0; j < orig.inputsLength; j++) { amounts.push(orig.getInput(j).witnessUtxo.amount); scripts.push(orig.getInput(j).witnessUtxo.script); }
+      const h = orig.preimageWitnessV1(i, scripts, btc.SigHash.DEFAULT, amounts);
+      verdict.schnorr = verdict.schnorr && schnorr.verify(w[0], h, spk.slice(2)); verdict.sigs++;   // BIP-340 against the output key (tweaked), SIGHASH_DEFAULT
+    } else {
+      const ps = s.partialSig || []; verdict.one = verdict.one && ps.length === 1; if (!verdict.one) continue;
+      const [pub, sig] = ps[0]; verdict.hash = verdict.hash && sig[sig.length - 1] === btc.SigHash.ALL;
+      let scriptCode;
+      if (type === 'wpkh') scriptCode = btc.OutScript.encode({ type: 'pkh', hash: spk.slice(2) });
+      else if (type === 'sh') scriptCode = btc.OutScript.encode({ type: 'pkh', hash: inp.redeemScript.slice(2) });
+      else scriptCode = inp.witnessScript;
+      const h = orig.preimageWitnessV0(i, scriptCode, btc.SigHash.ALL, amount), der = sig.slice(0, -1);
+      verdict.ecdsa = verdict.ecdsa && secp256k1.verify(der, h, pub, { prehash: false, format: 'der', lowS: true }); verdict.low = verdict.low && der.length <= 70;
+      const k = R2.A.derive(P.keys[i]); verdict.key = verdict.key && hx(k.publicKey) === hx(pub);
+      verdict.same = verdict.same && hx(coreLowR(h, k.privateKey)) === hx(sig); verdict.sigs++;
+    }
+  }
+  const type = name === 'p2tr' ? 'tr' : 'ecdsa';
+  t(verdict.one && verdict.sigs === orig.inputsLength, tag + ': the signed PSBT holds one signature for each of its ' + orig.inputsLength + ' input(s)');
+  if (type === 'tr') t(verdict.schnorr, tag + ': the BIP-340 signature verifies against the output key (sighash from btc-signer, SIGHASH_DEFAULT, noble verify)');
+  else {
+    t(verdict.hash && verdict.ecdsa, tag + ': each ECDSA signature verifies for its input with the BIP-143 sighash from btc-signer (SIGHASH_ALL, noble verify, low S)');
+    t(verdict.low && verdict.key && verdict.same, tag + ': each is low R, made with the key at ' + P.keys[0] + (P.keys.length > 1 ? ' ...' : '') + ', and equals Bitcoin Core\'s low-R signature (noble) byte for byte');
+  }
+  // merge into the original PSBT (a Taproot input comes back final: its witness goes in as the key-path signature), finalize, extract
+  const fin = btc.Transaction.fromPSBT(b64b(P.b64), { allowUnknownOutputs: true });
+  if (type === 'tr') fin.updateInput(0, { tapKeySig: signed.getInput(0).finalScriptWitness[0] }); else fin.combine(signed);
+  if (name === 'p2wsh_2of3') fin.signIdx(R2.B.derive("m/48'/0'/0'/2'/0/5").privateKey, 0);   // the second cosigner, signed with btc-signer
+  let raw = null, err = '';
+  try { fin.finalize(); raw = fin.extract(); } catch (e) { err = ' (' + e.message + ')'; }
+  const back = raw && btc.Transaction.fromRaw(raw, { allowUnknownOutputs: true });
+  t(!!raw && back.outputsLength === orig.outputsLength && back.getOutput(0).amount === orig.getOutput(0).amount, tag + ': btc-signer finalizes' + (name === 'p2wsh_2of3' ? ' (with a second signature it made for cosigner B)' : '') + ' and extracts the transaction' + (raw ? ' (' + raw.length + ' bytes)' : err));
+}
+
+// The screens of a PSBT review, read from the device
+const amountOf = (s) => { s = String(s).replace(/[,\s]/g, ''); return s.includes('.') ? Math.round(parseFloat(s) * 1e8) : +s; };
+const screenFields = (d, names) => d.ev((names) => { const s = SSController._instance.current_destination.view.screen, o = {}; for (const n of names) { const v = s[n]; o[n] = v instanceof Uint8Array ? Array.from(v) : v; } return o; }, names);
+async function toHome(d) { await d.back('SSMainMenuView'); }
+async function psbtToOverview(t, d, page, tag, name, frames) {
+  await toHome(d);
+  await scanFrames(d, page, frames);
+  let s = await d.waitView('SSPSBTSelectSeedView');
+  t(/Select Signer/.test(s.title) && s.labels.includes(FPA), tag + ': the scan is read as a PSBT and the device asks which seed signs (' + s.labels[0] + ')');
+  await d.pick(new RegExp(FPA));
+  return d.waitView('SSPSBTOverviewScreen');
+}
+async function psbtReview(t, d, page, tag, name, o = {}) {
+  const P = S2[name], spend = P.dests.reduce((a, x) => a + x[1], 0);
+  let f = await screenFields(d, ['spend_amount', 'change_amount', 'fee_amount', 'num_inputs', 'num_change_outputs', 'num_self_transfer_outputs', 'destination_addresses', 'has_op_return']);
+  t(f.spend_amount === spend && f.change_amount === P.change[1] && f.fee_amount === P.fee && f.num_inputs === P.inputs && f.num_change_outputs === 1 && f.num_self_transfer_outputs === 0 && f.has_op_return === !!P.opReturn && JSON.stringify(f.destination_addresses) === JSON.stringify(P.dests.map((x) => x[0])),
+    tag + ': overview shows ' + P.inputs + ' input(s), sending ' + spend + ' sats to ' + P.dests[0][0].slice(0, 10) + '..., change ' + P.change[1] + ', fee ' + P.fee + (P.opReturn ? ', an OP_RETURN' : '') + (f.spend_amount === spend && f.change_amount === P.change[1] && f.fee_amount === P.fee ? '' : ' (shows ' + JSON.stringify(f) + ')'));
+  await d.press('PRESS');
+  let s = await d.waitView('SSPSBTMathScreen'); f = await screenFields(d, ['input_amount', 'spend_amount', 'fee_amount', 'change_amount']);
+  const m = [f.input_amount, f.spend_amount, f.fee_amount, f.change_amount].map(amountOf);
+  t(m[0] === P.inSum && m[1] === spend && m[2] === P.fee && m[3] === P.change[1] && m[0] - m[1] - m[2] === m[3], tag + ': the transaction math reads ' + P.inSum + ' - ' + spend + ' - ' + P.fee + ' = ' + P.change[1] + ' (shows ' + m.join(', ') + ')');
+  await d.press('PRESS');
+  for (let i = 0; i < P.dests.length; i++) {
+    s = await d.waitView('SSPSBTAddressDetailsScreen'); f = await screenFields(d, ['address', 'amount']);
+    t(f.address === P.dests[i][0] && f.amount === P.dests[i][1], tag + ': "Will Send" shows ' + P.dests[i][1] + ' sats to ' + P.dests[i][0] + (f.address === P.dests[i][0] ? '' : ' (shows ' + f.address + ' ' + f.amount + ')'));
+    await d.press('PRESS');
+  }
+  s = await d.waitView('SSPSBTChangeDetailsScreen');
+  return { P, s };
+}
+async function changeChecks(t, d, tag, name, verified) {
+  const P = S2[name], f = await screenFields(d, ['amount', 'address', 'is_multisig', 'derivation_path_addr_index', 'is_change_derivation_path', 'is_change_addr_verified']), s = await d.state();
+  t(f.amount === P.change[1] && f.address === P.change[0] && f.derivation_path_addr_index === P.change[2] && f.is_change_derivation_path === P.change[3] && f.is_multisig === (name === 'p2wsh_2of3'),
+    tag + ': "Your Change" shows ' + P.change[1] + ' sats to ' + P.change[0].slice(0, 12) + '... as change address #' + P.change[2] + (f.address === P.change[0] ? '' : ' (shows ' + JSON.stringify(f) + ')'));
+  t(f.is_change_addr_verified === verified && (verified ? /^Next$/.test((s.labels || [])[0]) && (s.labels || []).length === 1 : /Verify multisig change/.test((s.labels || [])[0])),
+    tag + ': the change is ' + (verified ? 'shown as verified' : 'unverified, the device offers "Verify multisig change" and "Skip verification"') + ' (' + (s.labels || []).join(' | ') + ')');
+}
+async function psbtSign(t, d, page, tag, name) {
+  await d.waitView('SSPSBTFinalizeView'); await d.press('PRESS');
+  await d.waitView('SSPSBTSignedQRDisplayView');
+  const r = await readUR(page);
+  t(!!r && r.type === 'crypto-psbt', tag + ': the device shows the signed PSBT as a UR crypto-psbt QR (' + (r ? r.parts + ' part(s)' : 'none read') + ', read with jsqr)');
+  if (r) checkSigned(t, tag, name, r.bytes); else t(false, tag + ': no signed PSBT to check');
+  return r;
+}
+async function psbtFlow(t, d, page, name, frames, o = {}) {
+  const tag = name + (o.label ? ' ' + o.label : '');
+  await d.loadByScan();
+  await psbtToOverview(t, d, page, tag, name, frames);
+  const { s } = await psbtReview(t, d, page, tag, name);
+  const P = S2[name];
+  await changeChecks(t, d, tag, name, true);
+  await d.press('PRESS');
+  if (P.opReturn) {
+    await d.waitView('SSPSBTOpReturnScreen'); const f = await screenFields(d, ['op_return_data']);
+    t(Buffer.from(f.op_return_data).toString() === P.opReturn, tag + ': the OP_RETURN screen shows the data "' + P.opReturn + '"');
+    await d.press('PRESS');
+  }
+  await psbtSign(t, d, page, tag, name);
+  await d.press('PRESS'); const e = await d.waitView('SSMainMenuView');
+  t(await d.ev(() => SSController._instance.psbt === null && SSController._instance.psbt_parser === null), tag + ': after the signed QR the PSBT and its parser are cleared from the device');
+}
+SCEN.psbt_p2wpkh = (t, d, ctx, page) => psbtFlow(t, d, page, 'p2wpkh', [S2.p2wpkh.b64]);
+SCEN.psbt_p2sh = (t, d, ctx, page) => psbtFlow(t, d, page, 'p2sh_p2wpkh', [S2.p2sh_p2wpkh.b64]);
+// The P2TR PSBT comes as a real wallet's animation does when the camera starts late: part 1 and every other pure part are
+// missed, so the scan can only finish by solving the fountain-mixed parts that follow (bc-ur's encoder makes them)
+const urFountainParts = (rawBytes, maxFrag) => {
+  const e = new UREncoder(new CryptoPSBT(Buffer.from(rawBytes)).toUR(), maxFrag, 0, 10), n = e.fragmentsLength, p = [];
+  for (let i = 0; i < 4 * n + 10; i++) { const x = e.nextPart().toUpperCase(); if (i >= n || i % 2 === 1) p.push(x); }
+  return p;
+};
+SCEN.psbt_p2tr = (t, d, ctx, page) => psbtFlow(t, d, page, 'p2tr', urFountainParts(b64b(S2.p2tr.b64), 60), { label: '(animated UR in, part 1 missed: read from fountain-mixed parts)' });
+
+// ---- 2-of-3 P2WSH: the change is unverified until the wallet descriptor is scanned; then it is checked against the descriptor
+async function loadDescriptor(t, d, page, tag, text, o = {}) {
+  await d.waitView('SSLoadMultisigWalletDescriptorView'); let s = await d.state();
+  t(/Multisig Verification/.test(s.title) && /Scan descriptor/.test(s.labels[0]), tag + ': "Verify multisig change" asks to scan the wallet descriptor (' + s.title + ': ' + s.labels.join(' | ') + ')');
+  await scanFrames(d, page, [text], /Scan descriptor/);
+  s = await d.waitView('SSMultisigWalletDescriptorView');
+  const f = await screenFields(d, ['policy', 'fingerprints']), want = o.fps || S2.p2wsh_2of3.fps;
+  t(f.policy === '2 of 3' && JSON.stringify(f.fingerprints) === JSON.stringify(want), tag + ': the scanned descriptor loads as policy "2 of 3" with the cosigner fingerprints ' + want.join(', ') + ' (shows ' + f.policy + ' ' + (f.fingerprints || []).join(', ') + ')');
+  return s;
+}
+SCEN.psbt_msig = async (t, d, ctx, page) => {
+  const name = 'p2wsh_2of3', P = S2[name], tag = '2-of-3 P2WSH';
+  await d.loadByScan(); await psbtToOverview(t, d, page, tag, name, [P.b64]);
+  await psbtReview(t, d, page, tag, name);
+  await changeChecks(t, d, tag, name, false);
+  await d.pick(/Verify multisig change/);
+  const s = await loadDescriptor(t, d, page, tag, P.descriptor);
+  t(/Return to transaction/.test(s.labels[0]), tag + ': the descriptor screen offers "Return to transaction"');
+  await d.press('PRESS');
+  await d.waitView('SSPSBTChangeDetailsScreen');
+  await changeChecks(t, d, tag + ' with the descriptor', name, true);
+  await d.press('PRESS');
+  await psbtSign(t, d, page, tag, name);
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+};
+SCEN.psbt_msig_bad = async (t, d, ctx, page) => {   // a descriptor of other cosigners (A, B, D) does not own the change: the transaction is flagged and discarded
+  const name = 'p2wsh_2of3', P = S2[name], tag = '2-of-3 P2WSH, wrong descriptor';
+  await d.loadByScan(); await psbtToOverview(t, d, page, tag, name, [P.b64]);
+  await psbtReview(t, d, page, tag, name);
+  await d.pick(/Verify multisig change/);
+  await loadDescriptor(t, d, page, tag, P.badDescriptor, { fps: [FPA, fpOf(R2.B), fpOf(R2.D)] });
+  await d.press('PRESS');
+  const s = await d.waitView('SSPSBTAddressVerificationFailedView');
+  const st = await d.state();
+  t(/Suspicious Transaction/.test(st.title) && /Address Verification Failed/.test(st.headline) && /change address could not be verified from wallet descriptor/.test(st.text) && /Discard transaction/.test(st.labels[0]), tag + ': "Address Verification Failed" warns that the change could not be verified from the wallet descriptor (' + st.headline + ')');
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+  t(await d.ev(() => SSController._instance.psbt === null && !!SSController._instance.multisig_wallet_descriptor), tag + ': discarding clears the PSBT; the descriptor stays loaded until the device is switched off (the original page rule, v2.17.0)');
+};
+
+// ---- address verification: an address scanned from a QR code is found among the seed's (or the descriptor's) addresses
+async function verifyDone(d, ms = 90000) {   // waits for the success screen of the address verification
+  const t0 = Date.now(); let s;
+  while (Date.now() - t0 < ms) { s = await d.state(); if (s && s.view === 'SSSeedAddressVerificationSuccessView') { await d.idle(30000); return screenFields(d, ['address', 'verified_index', 'verified_index_is_change']); } await sleep(300); }
+  throw new Error('address verification did not finish, at ' + JSON.stringify(s));
+}
+async function verifySingle(t, d, page, tag, addr, idx, change, o = {}) {
+  await toHome(d);
+  await scanFrames(d, page, [(o.uri || '') + addr]);
+  let s = await d.state();
+  if (o.sigType) {   // a 3... address is a nested segwit or a multisig one: the device cannot tell and asks
+    s = await d.waitView('SSAddressVerificationSigTypeView');
+    t(/can't be auto-detected/.test(s.text) && s.labels.join('|') === 'Single Sig|Multisig', tag + ': the device cannot tell the signature type of a 3... address and asks (' + s.labels.join(' | ') + ')');
+    await d.pick(/Single Sig/);
+  }
+  s = await d.waitView('SSSeedSelectSeedView');
+  t(/Verify Address/.test(s.title) && s.labels[0] === FPA, tag + ': the scanned address asks which seed to verify it with');
+  await d.pick(new RegExp(FPA));
+  const f = await verifyDone(d);
+  t(f.address === addr && f.verified_index === idx && f.verified_index_is_change === change, tag + ': "Address Verified": ' + addr.slice(0, 12) + '... is ' + (change ? 'change' : 'receive') + ' address #' + idx + ' of the seed (device says #' + f.verified_index + (f.verified_index_is_change ? ' change' : ' receive') + ')');
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+}
+SCEN.addr_single = async (t, d, ctx, page) => {   // single sig: addresses made here by @scure/btc-signer from the seed
+  await d.loadByScan();
+  await verifySingle(t, d, page, 'native receive #3', addrOf(ABANDON, '', 'native', 0, 3), 3, false, { uri: 'bitcoin:' });
+  await verifySingle(t, d, page, 'nested change #2', addrOf(ABANDON, '', 'nested', 1, 2), 2, true, { sigType: true });
+};
+SCEN.addr_taproot = async (t, d, ctx, page) => {
+  await d.loadByScan();
+  await verifySingle(t, d, page, 'taproot receive #12', addrOf(ABANDON, '', 'taproot', 0, 12), 12, false);
+};
+SCEN.addr_multi = async (t, d, ctx, page) => {   // multisig: the address is #7 of the 2-of-3 descriptor
+  const P = S2.p2wsh_2of3, tag = 'multisig address #7';
+  await d.loadByScan(); await toHome(d);
+  await scanFrames(d, page, [P.receive7]);
+  await loadDescriptor(t, d, page, tag, P.descriptor);
+  const st = await d.state();
+  t(st.labels[0] === 'Verify addr ' + P.receive7.slice(0, 7), tag + ': the descriptor screen offers "Verify addr ' + P.receive7.slice(0, 7) + '" (' + st.labels[0] + ')');
+  await d.press('PRESS');
+  const f = await verifyDone(d);
+  t(f.address === P.receive7 && f.verified_index === 7 && f.verified_index_is_change === false, tag + ': "Address Verified": ' + P.receive7.slice(0, 12) + '... is receive address #7 of the 2-of-3 wallet, made by btc-signer (device says #' + f.verified_index + ')');
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+};
+
+// ---- sign message: a scanned "signmessage" request; the signature is checked as a "Bitcoin Signed Message" (noble secp256k1, independent of the page)
+const varStr = (b) => { const n = b.length, h = n < 253 ? Buffer.from([n]) : Buffer.from([253, n & 255, n >> 8]); return Buffer.concat([h, b]); };
+const msgHash = (msg) => sha256(sha256(Buffer.concat([varStr(Buffer.from('Bitcoin Signed Message:\n')), varStr(Buffer.from(msg, 'utf8'))])));
+function checkMessageSig(sigB64, msg, wantPub, kind) {   // the classic format: base64 of header + r + s, header = 27 + recovery id (+ 4 for a compressed key)
+  const sig = Buffer.from(sigB64, 'base64'); if (sig.length !== 65 || sig[0] < 27 || sig[0] > 34) return { ok: false, why: 'not a 65-byte signature with a header 27..34' };
+  const rec = (sig[0] - 27) & 3, comp = sig[0] >= 31, rs = sig.subarray(1), h = msgHash(msg);
+  const pub = secp256k1.Signature.fromCompact(rs).addRecoveryBit(rec).recoverPublicKey(h).toRawBytes(comp);
+  const good = secp256k1.verify(rs, h, pub, { prehash: false }) && hx(pub) === hx(wantPub);
+  const addr = kind === 'p2pkh' ? btc.p2pkh(pub).address : kind === 'p2sh' ? btc.p2sh(btc.p2wpkh(pub)).address : btc.p2wpkh(pub).address;
+  return { ok: good && comp, pub, addr, header: sig[0] };
+}
+SCEN.signmsg = async (t, d, ctx, page) => {
+  await d.loadByScan(); await toHome(d);
+  const cases = [
+    { path: "m/84'/0'/0'/0/0", kind: 'p2wpkh', msg: 'hello world' },
+    { path: "m/44'/0'/0'/0/3", kind: 'p2pkh', msg: 'The quick brown fox jumps over the lazy dog. '.repeat(6).trim() },
+    { path: "m/49'/0'/0'/1/1", kind: 'p2sh', msg: 'Signed with SeedSigner+ practice simulator: 0123456789' },
+  ];
+  // Message signing is off until Settings > Advanced > Message signing is set to Enabled: the request is refused first
+  await scanFrames(d, page, ['signmessage ' + cases[0].path.replace(/'/g, 'h') + ' ascii:' + cases[0].msg]);
+  let s = await sleepUntil(d, (x) => x.view !== 'SSMainMenuView', 20000);
+  t(s && s.view === 'SSOptionDisabledView', 'message signing disabled: a signmessage request is refused, no seed is asked for (' + (s && s.view) + ')');
+  await toHome(d);
+  await d.pick(/^Settings$/); await d.pick(/^Advanced$/); await d.pick(/^Message signing$/); await d.pick(/^Enabled$/);
+  await toHome(d);
+  t(await d.ev(() => SSSettings.get_instance().get_value('message_signing')) === 'E', 'Settings > Advanced > Message signing > Enabled turns it on');
+  for (const c of cases) {
+    const tag = 'sign message ' + c.kind + ' ' + c.path, k = R2.A.derive(c.path), addr = c.kind === 'p2pkh' ? btc.p2pkh(k.publicKey).address : c.kind === 'p2sh' ? btc.p2sh(btc.p2wpkh(k.publicKey)).address : btc.p2wpkh(k.publicKey).address;
+    await toHome(d);
+    await scanFrames(d, page, ['signmessage ' + c.path.replace(/'/g, 'h') + ' ascii:' + c.msg]);
+    s = await d.waitView('SSSeedSelectSeedView');
+    t(/Sign Message/.test(s.title), tag + ': the request asks which seed signs');
+    await d.pick(new RegExp(FPA));
+    let pages = 0;
+    for (let n = 0; n < 12; n++) { s = await d.state(); if (s.view === 'SSSeedSignMessageConfirmMessageView') { pages++; await d.press('PRESS'); } else break; }
+    t(pages >= 1 && (c.msg.length < 60 || pages > 1) && await d.ev(() => SSController._instance.sign_message_data.message) === c.msg, tag + ': the device shows the message in ' + pages + ' page(s) (' + c.msg.length + ' characters)');
+    s = await d.waitView('SSSeedSignMessageConfirmAddressView');
+    const f = await screenFields(d, ['derivation_path', 'address']);
+    t(f.address === addr && f.derivation_path.replace(/h/g, "'") === c.path, tag + ': "Confirm Address" shows ' + addr + ' (' + c.path + ')' + (f.address === addr ? '' : ' (shows ' + f.address + ')'));
+    await d.press('PRESS');
+    await d.waitView('SSSeedSignMessageSignedMessageQRView');
+    const q = await d.readQR();
+    const r = q ? checkMessageSig(q.text, c.msg, k.publicKey, c.kind) : { ok: false, why: 'no QR' };
+    t(r.ok, tag + ': the QR is a valid "Bitcoin Signed Message" signature (noble: recovers the key at ' + c.path + ', verifies, compressed header ' + r.header + ')' + (r.ok ? '' : ' ' + (r.why || '')));
+    t(r.addr === addr, tag + ': the key recovered from the signature is the key of ' + addr);
+    await d.press('PRESS'); await d.waitView('SSMainMenuView');
+  }
+};
+async function sleepUntil(d, f, ms) { const t0 = Date.now(); let s; while (Date.now() - t0 < ms) { s = await d.state(); if (s && f(s)) { await d.idle(30000); return d.state(); } await sleep(250); } return s; }
+
+// ---- wipe in the middle of a PSBT flow: after signing (signatures held), with the descriptor loaded
+SCEN.psbt_wipe = async (t, d, ctx, page) => {
+  const name = 'p2wsh_2of3', P = S2[name], tag = 'wipe in a PSBT flow';
+  await d.loadByScan(); await psbtToOverview(t, d, page, tag, name, [P.b64]);
+  await psbtReview(t, d, page, tag, name);
+  await d.pick(/Verify multisig change/);
+  await loadDescriptor(t, d, page, tag, P.descriptor);
+  await d.press('PRESS'); await d.waitView('SSPSBTChangeDetailsScreen');
+  await d.press('PRESS'); await d.waitView('SSPSBTFinalizeView'); await d.press('PRESS');
+  await d.waitView('SSPSBTSignedQRDisplayView');
+  const held = await d.ev(() => {
+    const c = SSController._instance, p = c.psbt, parser = c.psbt_parser, desc = c.multisig_wallet_descriptor, o = parser.psbt.inputs[0];
+    const keys = desc.miniscript.keys, zero = (b) => b.every((x) => x === 0);
+    window.__keep = { sig: p.inputs[0].partial_sigs[0].sig, sig2: o.partial_sigs[0].sig, ws: o.witness_script, spk: o.witness_utxo.script_pubkey, chain: parser.root.chain_code, k: parser.root, dpub: keys[0].key.pub, dchain: keys[0].key.chain };
+    const k = window.__keep;
+    return { sig: !zero(k.sig), ws: !zero(k.ws), spk: !zero(k.spk), chain: !zero(k.chain), dpub: !zero(k.dpub), dchain: !zero(k.dchain), has: !!c.psbt && !!c.psbt_parser && !!desc };
+  });
+  t(held.has && held.sig && held.ws && held.spk && held.chain && held.dpub && held.dchain, tag + ': before the wipe the device holds the PSBT, a signature, the signing key and the descriptor (' + JSON.stringify(held) + ')');
+  await d.ev(() => clearAll());   // CLEAR ALL
+  await until(() => d.ev(() => !SSController._instance && !document.getElementById('ssBox').open && !document.body.classList.contains('cam-on')), 30000);
+  const w = await d.ev(() => {
+    const k = window.__keep, zero = (b) => b.every((x) => x === 0), c = document.getElementById('ssScreen'), g = c.getContext('2d'), px = g.getImageData(0, 0, c.width, c.height).data; let lit = 0;
+    for (let i = 0; i < px.length; i += 4) if (px[i] || px[i + 1] || px[i + 2]) lit++;
+    return { ctl: !SSController._instance, sig: zero(k.sig), sig2: zero(k.sig2), ws: zero(k.ws), spk: zero(k.spk), chain: zero(k.chain), key: k.k.k === 0n, dpub: zero(k.dpub), dchain: zero(k.dchain), box: document.getElementById('ssBox').open, lit, cam: document.body.classList.contains('cam-on') };
+  });
+  t(w.ctl && !w.box && w.lit === 0 && !w.cam, tag + ': CLEAR ALL drops the controller, closes the section, blanks the screen and turns the camera off (' + JSON.stringify({ ctl: w.ctl, box: w.box, lit: w.lit, cam: w.cam }) + ')');
+  t(w.sig && w.sig2 && w.ws && w.spk, tag + ': the PSBT bytes and the signature are overwritten with zeros');
+  t(w.chain && w.key, tag + ': the signing root key (private key and chain code) is overwritten');
+  t(w.dpub && w.dchain, tag + ': the scanned descriptor\'s keys are overwritten');
+};
+
+// ---- review fixes: two quick taps, key repeat only while held, regtest addresses in the Address Explorer (from an xpub),
+// a "bitcoin:" QR with no address, a taproot descriptor with a script tree
+SCEN.review = async (t, d, ctx, page) => {
+  await d.waitView('SSMainMenuView'); await d.pick(/^Tools$/);
+  await d.press('DOWN'); await d.press('PRESS'); await d.pick(/12 words/);
+  await d.waitView('SSToolsDiceEntropyEntryScreen');
+  // [[at ms, hold ms], ...] on the joystick press (the dice key "1" is selected). The key timing is what is tested here, so the
+  // taps stay timed in the page; a try whose timers a busy machine delayed (a hold or a gap more than 40 ms off the plan) is done
+  // again. Each try starts once the last key is over (the device's "same press" window closed), and the rolls are counted once
+  // the device took or dropped every tap and waits for a key again.
+  const taps = async (plan) => {
+    let r;
+    for (let n = 0; n < 8; n++) {
+      await until(() => d.ev(() => { const h = SSHardwareButtons._instance; return window.__ssIdle() && Date.now() - h.last_input_time > h.next_repeat_threshold; }), 30000, 25);
+      r = await d.ev((plan) => new Promise((res) => {
+        const h = SSHardwareButtons.get_instance(), sc = () => SSController._instance.current_destination.view.screen, n0 = sc().user_input.length, t0 = performance.now(), down = [], up = [];
+        plan.forEach(([at, hold], i) => { setTimeout(() => { down[i] = performance.now() - t0; h.key_down('KEY_PRESS'); }, at); setTimeout(() => { up[i] = performance.now() - t0; h.key_up('KEY_PRESS'); }, at + hold); });
+        const end = Math.max(...plan.map(([a, b]) => a + b)), t1 = Date.now();
+        const done = () => {
+          if ((up.filter((x) => x !== undefined).length === plan.length && window.__ssIdle()) || Date.now() - t1 > 20000) {
+            const off = Math.max(...plan.map(([at, hold], i) => Math.max(Math.abs(down[i] - down[0] - at), Math.abs(up[i] - down[i] - hold))));
+            res({ n: sc().user_input.length - n0, off });
+          } else setTimeout(done, 20);
+        };
+        setTimeout(done, end);
+      }), plan);
+      if (r.off <= 40) break;
+    }
+    return r.n;
+  };
+  const counts = [];
+  for (const gap of [150, 180, 200, 240, 300]) counts.push(await taps([[0, 70], [gap, 70]]));
+  t(counts.every((c) => c === 2), 'keys: two quick taps (70 ms each, 150 to 300 ms apart) count as two rolls, never three (' + counts.join(', ') + ')');
+  const held = await taps([[0, 700]]);
+  t(held >= 3, 'keys: a key held for 700 ms repeats after 225 ms, as on the device (' + held + ' rolls)');
+  await page.click('#ssBox > summary'); await until(() => d.ev(() => !ssPageOn && !SSController._instance), 30000); await page.click('#ssBox > summary');   // switch it off and on
+  // regtest: the Address Explorer shows bcrt1 addresses (BIP84 path m/84'/1'/0'), made from the account xpub
+  await d.waitView('SSMainMenuView');
+  await d.ev(() => { const S = SSSettings.get_instance(), C = SSSettingsConstants; S.set_value(C.SETTING__NETWORK, C.REGTEST); });
+  const { fp } = await d.loadByScan();
+  await d.pick(/Address explorer/); await d.pick(/^Native Segwit$/);
+  await d.waitView('SSToolsAddressExplorerAddressTypeView'); await d.pick(/Receive/); await d.waitView('SSToolsAddressExplorerAddressListView');
+  const REG = { bech32: 'bcrt', pubKeyHash: 0x6f, scriptHash: 0xc4, wif: 0xef };
+  const want = Array.from({ length: 10 }, (_, i) => shortAddr(btc.p2wpkh(rootOf(ABANDON).derive(`m/84'/1'/0'/0/${i}`).publicKey, REG).address, i));
+  const got = ((await d.state()).labels || []).slice(0, 10);
+  t(JSON.stringify(got) === JSON.stringify(want), 'regtest: the Address Explorer shows bcrt1 addresses, as SeedSigner does (' + got[0] + ', wanted ' + want[0] + ')');
+  const xp = await d.ev(() => { const x = SSController._instance.address_explorer_data.xpub; return { keys: Object.keys(x).sort().join(','), key: x.key && x.key.length, chain: x.chain_code && x.chain_code.length }; });
+  t(xp.key === 33 && xp.chain === 32 && !/\b(k|root|steps)\b/.test(xp.keys), 'Address Explorer: it holds the account xpub (33-byte public key, chain code), not the master private key (' + xp.keys + ')');
+  // "bitcoin:" with no address: the scan stops and goes Home (SeedSigner: "Invalid address", DecodeQRStatus.INVALID)
+  await toHome(d);
+  await scanFrames(d, page, ['bitcoin:', 'bitcoin:', 'hello']); await until(async () => { const x = await d.state(); return x && x.view !== 'SSScanView' && await d.idle(0); }, 60000);
+  let st = await d.state();
+  t(st.view === 'SSMainMenuView', '"bitcoin:" with no address: the scan stops and the device goes Home (' + st.view + ')');
+  // tr(key, {script tree}): read as a descriptor, then "Not Yet Implemented" as on SeedSigner
+  const xpubOf = (m, path) => rootOf(m).derive(path).publicExtendedKey;
+  const trDesc = `tr([${FPA}/86'/0'/0']${xpubOf(MN2.A, "m/86'/0'/0'")}/0/*,{sortedmulti_a(1,${xpubOf(MN2.B, "m/86'/0'/0'")}/0/*,${xpubOf(MN2.C, "m/86'/0'/0'")}/0/*)})`;
+  await scanFrames(d, page, [trDesc]);
+  st = await d.waitView('SSNotYetImplementedView');
+  t(st.view === 'SSNotYetImplementedView', 'tr() with a script tree: "Not Yet Implemented", as SeedSigner shows (' + st.view + ')');
+};
+
+// ================================================================ v2.14.0: Learn on the practice signer (page text and controls next to the device)
+// The lessons are driven only with the device's own keys (and the page buttons a lesson asks for); a step counts as passed only when the
+// panel moves on by itself. The practice transaction is built by the page; here it is taken apart and its signatures are checked with
+// @scure/btc-signer + @noble/curves against keys made here by @scure/bip32 from the public test seeds (never with the page's code).
+const MN_PAY = 'zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo zoo wrong';
+const panel = (d) => d.ev(() => ({ id: ssLearn.lesson && ssLearn.lesson.id, step: ssLearn.step, done: ssLearn.done, n: ssLearn.lesson ? ssLearn.lesson.steps.length : 0,
+  count: document.getElementById('ssLearnCount').textContent, do: document.getElementById('ssLearnDo').textContent, see: document.getElementById('ssLearnSee').textContent,
+  cam: ssLearnCam.frames ? ssLearnCam.key : '', tx: ssLearn.tx ? { kind: ssLearn.tx.kind, ok: !!(ssLearn.tx.result && ssLearn.tx.result.ok) } : null,
+  status: document.getElementById('ssTxStatus').textContent, net: !document.getElementById('ssTxNet').hidden }));
+const waitCam = async (d, key, ms = 60000) => { const t0 = Date.now(); while (Date.now() - t0 < ms) { if ((await panel(d)).cam === key) return; await sleep(150); } throw new Error('the practice wallet never showed ' + key); };
+const toHomeAny = async (d) => { const s = await d.state(); if (s.screen === 'SSQRDisplayScreen') await d.press('PRESS'); await d.back('SSMainMenuView'); };
+// acts[i]: what a person does at step i. Returns the steps the panel showed, in order.
+async function runLesson(d, page, id, acts) {
+  await page.evaluate(() => {   // every step the panel shows, in order (also the ones it passes at once)
+    window.__lsteps = []; const c = document.getElementById('ssLearnCount');
+    if (window.__lobs) window.__lobs.disconnect();
+    window.__lobs = new MutationObserver(() => { const i = ssLearn.done ? -1 : ssLearn.step; if (window.__lsteps[window.__lsteps.length - 1] !== i) window.__lsteps.push(i); });
+    window.__lobs.observe(c, { childList: true, characterData: true, subtree: true });
+  });
+  await page.selectOption('#ssLearnPick', id); await page.click('#ssLearnGo'); await d.lessonTicks(2);
+  const seen = []; let p = await panel(d);
+  for (let guard = 0; guard < 80 && !p.done; guard++) {
+    const i = p.step; seen.push(i);
+    if (!acts[i]) throw new Error('lesson ' + id + ': nothing to do at step ' + i + ' (' + p.do + ')');
+    await acts[i](d, page);
+    const t0 = Date.now(); while (Date.now() - t0 < 120000) { p = await panel(d); if (p.done || p.step !== i) break; await sleep(150); }
+    if (!p.done && p.step === i) throw new Error('lesson ' + id + ' stuck at step ' + i + ' (' + p.do + '), device at ' + JSON.stringify(await d.state()));
+  }
+  const shown = await page.evaluate(() => window.__lsteps.filter((x) => x >= 0));
+  return { seen: shown, p };
+}
+const lessonOk = (t, id, r, n, skipped = []) => {
+  const want = Array.from({ length: n }, (_, i) => i).filter((i) => !skipped.includes(i));
+  const inOrder = r.seen.every((x, i) => i === 0 || x > r.seen[i - 1]);
+  const all = want.every((i) => r.seen.includes(i));
+  t(r.p.done && r.p.id === id && inOrder && all && /Lesson done/.test(r.p.count + 'Lesson done'),
+    'lesson "' + id + '": driven with the device keys, each of its ' + n + ' steps moves on when the device shows the expected screen (' + r.seen.length + ' steps shown' + (skipped.length ? ', ' + skipped.length + ' load steps passed over: the test seed was loaded' : '') + '), then "Lesson done"' + (r.p.done ? '' : ' ' + JSON.stringify(r)));
+};
+const P = (k) => async (d) => d.press(k);
+const many = (...a) => async (d) => { for (const k of a) await d.press(k); };
+const LOAD = [async () => {}, async (d) => { await waitCam(d, 'seedqr'); await d.pick(/^Scan$/); }, P('PRESS')];
+// The practice PSBT and its signed copy, checked here: made-up coins, the keys of the test seed, the payee, the change, every signature
+function checkPractice(t, tag, origB, signedB, o) {
+  const NET = o.net === 'M' ? btc.NETWORK : btc.TEST_NETWORK, coin = o.net === 'M' ? 0 : 1;
+  const orig = btc.Transaction.fromPSBT(origB), signed = btc.Transaction.fromPSBT(signedB), ref = btc.Transaction.fromPSBT(origB, { lowR: true });
+  // the coins: one made-up previous transaction whose only input is a null outpoint marked as practice
+  let made = true, mark = '';
+  for (let i = 0; i < orig.inputsLength; i++) {
+    const inp = orig.getInput(i), prev = btc.Transaction.fromRaw(btc.RawTx.encode(inp.nonWitnessUtxo), { allowUnknownInputs: true, allowUnknownOutputs: true, disableScriptCheck: true });
+    const pin = prev.getInput(0); mark = Buffer.from(pin.finalScriptSig || []).toString('latin1');
+    made = made && prev.id === hx(inp.txid) && prev.inputsLength === 1 && hx(pin.txid) === '00'.repeat(32) && pin.index === 0xffffffff && /DRYRUN practice coins: made up, not real/.test(mark)
+      && hx(prev.getOutput(inp.index).script) === hx(inp.witnessUtxo.script) && prev.getOutput(inp.index).amount === inp.witnessUtxo.amount;
+  }
+  t(made, tag + ': every input spends a made-up previous transaction (null outpoint, its script says "' + mark.replace(/[^ -~]/g, '').slice(0, 40) + '..."), so the PSBT can never be broadcast');
+  // keys, payee and change from the test seeds
+  const A = rootOf(ABANDON), pay = btc.p2wpkh(rootOf(MN_PAY).derive(`m/84'/${coin}'/0'/0/0`).publicKey, NET).address;
+  let keys = true;
+  const paths = [];
+  for (let i = 0; i < orig.inputsLength; i++) {
+    const inp = orig.getInput(i), mine = (inp.bip32Derivation || []).find(([, v]) => v.fingerprint === A.fingerprint);
+    const path = 'm/' + mine[1].path.map((x) => x >= HARD ? (x - HARD) + "'" : String(x)).join('/'); paths.push(path);
+    keys = keys && hx(A.derive(path).publicKey) === hx(mine[0]) && (o.multi ? path === `m/48'/${coin}'/0'/2'/0/${i}` : path === `m/84'/${coin}'/0'/0/${i}`)
+      && (o.multi ? true : hx(inp.witnessUtxo.script) === hx(btc.p2wpkh(mine[0]).script));
+  }
+  const out0 = btc.Address(NET).encode(btc.OutScript.decode(orig.getOutput(0).script)), ch = orig.getOutput(1), chd = (ch.bip32Derivation || []).find(([, v]) => v.fingerprint === A.fingerprint);
+  const chPath = chd && 'm/' + chd[1].path.map((x) => x >= HARD ? (x - HARD) + "'" : String(x)).join('/');
+  keys = keys && out0 === pay && !!chd && hx(A.derive(chPath).publicKey) === hx(chd[0]) && chPath === (o.multi ? `m/48'/${coin}'/0'/2'/1/0` : `m/84'/${coin}'/0'/1/0`);
+  t(keys, tag + ': it spends ' + orig.inputsLength + ' coin(s) of the test seed at ' + paths.join(', ') + ', pays ' + pay.slice(0, 12) + '... (receive #0 of the "zoo ... wrong" test seed) and sends change to ' + chPath + ' (keys made here with @scure/bip32)');
+  // the signatures the device made, read from its screen: BIP-143 sighash from btc-signer, noble verify, and equal to btc-signer's own
+  const ok = { n: 0, ecdsa: true, same: true };
+  for (let i = 0; i < orig.inputsLength; i++) {
+    const inp = orig.getInput(i), ps = signed.getInput(i).partialSig || [];
+    if (ps.length !== 1) { ok.ecdsa = false; continue; }
+    const [pub, sig] = ps[0], k = A.derive(paths[i]);
+    const scriptCode = o.multi ? inp.witnessScript : btc.OutScript.encode({ type: 'pkh', hash: inp.witnessUtxo.script.slice(2) });
+    const h = orig.preimageWitnessV0(i, scriptCode, btc.SigHash.ALL, inp.witnessUtxo.amount);
+    ok.ecdsa = ok.ecdsa && hx(pub) === hx(k.publicKey) && sig[sig.length - 1] === btc.SigHash.ALL && secp256k1.verify(sig.slice(0, -1), h, pub, { prehash: false, format: 'der', lowS: true });
+    ok.same = ok.same && hx(coreLowR(h, k.privateKey)) === hx(sig); ok.n++;
+  }
+  t(ok.ecdsa && ok.n === orig.inputsLength, tag + ': the signed PSBT read from the device\'s screen holds one valid signature per input (' + ok.n + '), checked with btc-signer\'s BIP-143 sighash and noble');
+  t(ok.same, tag + ': each signature equals Bitcoin Core\'s low-R signature (RFC 6979, counter from 1, noble) byte for byte');
+  const fin = btc.Transaction.fromPSBT(origB); fin.combine(signed);
+  if (o.multi) fin.signIdx(rootOf(MN2.B).derive(`m/48'/${coin}'/0'/2'/0/0`).privateKey, 0);
+  let raw = null; try { fin.finalize(); raw = fin.extract(); } catch (e) { raw = null; }
+  t(!!raw, tag + ': btc-signer finalizes it' + (o.multi ? ' with a second signature it made for cosigner B' : '') + ' (a complete transaction that still spends coins that do not exist)');
+}
+async function practiceRun(t, d, page, tag, o) {
+  // Home > Scan reads the practice PSBT from the practice wallet; review, sign; the page reads the signed QR back
+  await waitCam(d, 'tx');
+  const origB = Uint8Array.from(await d.ev(() => Array.from(ssLearn.tx.psbt)));
+  await toHomeAny(d); await d.pick(/^Scan$/);
+  let s = await d.waitView('SSPSBTSelectSeedView'); await d.lessonTicks(2);   // the panel's check saw the scan end
+  t(s.labels[0] === FPA && (await panel(d)).cam === '', tag + ': the device reads the practice PSBT from the practice wallet and asks which seed signs (' + s.labels[0] + '); the practice wallet is put away');
+  await d.pick(new RegExp(FPA)); await d.waitView('SSPSBTOverviewScreen');
+  const f = await screenFields(d, ['spend_amount', 'change_amount', 'fee_amount', 'num_inputs']);
+  const want = o.multi ? [200000, 298500, 1500, 1] : [120000, 99000, 1000, 2];
+  t(JSON.stringify([f.spend_amount, f.change_amount, f.fee_amount, f.num_inputs]) === JSON.stringify(want), tag + ': the device\'s overview shows ' + want[0] + ' sats sent, ' + want[1] + ' change, ' + want[2] + ' fee, ' + want[3] + ' input(s) (' + JSON.stringify(f) + ')');
+  for (let n = 0; n < 12; n++) {
+    s = await d.state(); if (s.view === 'SSPSBTSignedQRDisplayView') break;
+    if (s.view === 'SSPSBTChangeDetailsView' && /Verify multisig/.test(s.labels[0])) { await d.press('PRESS'); await d.ev(() => ssLearnArm('descriptor')); await waitCam(d, 'descriptor'); await d.press('PRESS'); await d.waitView('SSMultisigWalletDescriptorView'); }
+    await d.press('PRESS');
+  }
+  await d.waitView('SSPSBTSignedQRDisplayView');
+  const r = await readUR(page);
+  t(!!r && r.type === 'crypto-psbt', tag + ': the device shows the signed PSBT as a UR crypto-psbt QR (' + (r ? r.parts + ' part(s), read with jsqr' : 'none read') + ')');
+  const t0 = Date.now(); let p; while (Date.now() - t0 < 120000) { p = await panel(d); if (p.tx && p.tx.ok) break; await sleep(300); }
+  t(p.tx && p.tx.ok && /^Signed correctly: /.test(p.status) && /checked by this page's own code/.test(p.status), tag + ': the page reads the signed QR from the device\'s screen and says "' + p.status.split('(')[0].trim() + '"');
+  if (r) checkPractice(t, tag, origB, r.bytes, o);
+  return origB;
+}
+SCEN.practice_tx = async (t, d, ctx, page) => {   // Testnet, no lesson: the PRACTICE TRANSACTION button by itself
+  const tag = 'practice transaction (single key, Testnet)';
+  await d.waitView('SSMainMenuView');
+  await d.ev(() => { const S = SSSettings.get_instance(), C = SSSettingsConstants; S.set_value(C.SETTING__NETWORK, C.TESTNET); });
+  await d.ev(() => ssLearnArm('seedqr')); await waitCam(d, 'seedqr');
+  await d.pick(/^Scan$/); await d.pick(/^Done$/);
+  await page.selectOption('#ssTxKind', 'single'); await page.click('#ssTxGo');
+  await waitCam(d, 'tx'); let p = await panel(d);
+  t(!p.net && /Spends 2 made-up coins of seed 73c5da0a/.test(p.status) && /made-up transaction [0-9a-f]{16}\.\.\., marked "DRYRUN practice coins/.test(await page.textContent('#ssTxCoins')),
+    tag + ': PRACTICE TRANSACTION spends made-up coins of the seed on the device, names the made-up transaction, and shows no Mainnet warning on Testnet');
+  const origB = await practiceRun(t, d, page, tag, { net: 'T' });
+  // v2.17.0 (was review L7): the lessons work with any seed: the practice transaction spends the newest seed loaded, in a lesson too
+  const l7 = await d.ev(async () => { const st = SSController._instance._storage, other = await SSSeed.create({ mnemonic: 'legal winner thank year wave sausage worth useful legal winner thank yellow' }); st.seeds.push(other);
+    try { ssLearn.lesson = SS_LEARN_LESSONS.find((l) => l.id === 'sign'); const a = await ssLearnBuild('single'); ssLearn.lesson = null; const b = await ssLearnBuild('single'); return [a.fp, b.fp]; } finally { ssLearn.lesson = null; st.seeds.pop(); } });
+  t(l7[0] === 'b8688df1' && l7[1] === 'b8688df1', 'v2.17.0: with another seed loaded after the test seed, the practice transaction spends the newest seed b8688df1, in a lesson too (the lesson names it by its fingerprint) (' + l7.join(', ') + ')');
+  // the device itself: its menus are SeedSigner's own, nothing of the lessons is on its screen or in its menus
+  await toHomeAny(d); const s = await d.state();
+  t(JSON.stringify(s.labels) === '["Scan","Seeds","Tools","Settings"]' && s.title === 'Home', 'the device keeps SeedSigner\'s own Home menu (Scan, Seeds, Tools, Settings): nothing is added to it');
+  // CLEAR ALL wipes the practice PSBT, the practice wallet and the lesson panel
+  await d.ev(() => { window.__keepTx = ssLearn.tx; }); await page.selectOption('#ssLearnPick', 'sign'); await page.click('#ssLearnGo'); await d.lessonTicks(1);
+  await d.ev(() => clearAll()); await until(() => d.ev(() => !ssPageOn && ssLearn.lesson === null && ssLearn.tx === null && ssLearn.timer === null), 30000);
+  const w = await d.ev(() => ({ tx: ssLearn.tx, lesson: ssLearn.lesson, cam: ssLearnCam.frames, zero: window.__keepTx.psbt.every((x) => x === 0) && window.__keepTx.utx.every((x) => x === 0), run: document.getElementById('ssLearnRun').hidden, st: document.getElementById('ssTxStatus').textContent, timer: ssLearn.timer }));
+  t(w.tx === null && w.lesson === null && w.cam === null && w.zero && w.run && w.st === '' && w.timer === null, 'CLEAR ALL drops the lesson, the practice wallet\'s QR codes and the practice transaction, and overwrites the PSBT bytes (' + JSON.stringify({ zero: w.zero, run: w.run }) + ')');
+};
+SCEN.lessons_dice = async (t, d, ctx, page) => {
+  const rolls = '1'.repeat(50), exp = diceWords(rolls, 12).split(' ');
+  t(await d.ev(() => SS_LEARN_LESSONS.length === 6 && SS_LEARN_LESSONS.every((l) => l.name && l.note && l.end && l.steps.every((s) => s.do && s.see && typeof s.at === 'function')) && /They work with the seed loaded on the device, real or practice; with none loaded, they load the public test seed abandon \.\.\. about/.test(document.getElementById('ssLearn').textContent)),
+    'lessons: six lessons next to the device, each step with plain text and a "what you should see" line; the panel says they use the seed on the device, or the public test seed when none is loaded (v2.17.0)');
+  let words = [];
+  const answer = async (d) => {
+    for (let n = 0; n < 14; n++) {
+      const s = await d.state(); if (s.view !== 'SSSeedWordsBackupTestView') break;
+      const k = +s.title.replace(/\D+/g, '') - 1; await d.pick(new RegExp('^' + exp[k] + '$'));
+    }
+  };
+  const readWords = async (d) => { words.push(...await d.scr(() => SSController._instance.current_destination.view.screen.words)); await d.press('PRESS'); };
+  const acts = [async () => {}, many('DOWN', 'PRESS'), many('DOWN', 'PRESS'), P('PRESS'),
+    async (d) => { for (let i = 0; i < 50; i++) await d.press('PRESS'); }, P('PRESS'), readWords, readWords, readWords, P('PRESS'), answer, P('PRESS'), P('PRESS')];
+  // the panel's controls first: BACK, NEXT and RESTART LESSON
+  await d.waitView('SSMainMenuView'); await page.selectOption('#ssLearnPick', 'dice'); await page.click('#ssLearnGo'); await d.lessonTicks(2);
+  const c0 = (await panel(d)).step; await page.click('#ssLearnNext'); const c1 = (await panel(d)).step; await page.click('#ssLearnBack'); const c2 = (await panel(d)).step;
+  await page.click('#ssLearnNext'); await page.click('#ssLearnNext'); await page.click('#ssLearnRestart'); await d.lessonTicks(2); const c3 = await panel(d);
+  t(c0 === 1 && c1 === 2 && c2 === 1 && c3.step === 1 && /^Step 2 of 13$/.test(c3.count), 'lesson controls: NEXT and BACK move one step, RESTART LESSON goes back to the start (step 1, Home, passes at once: the device shows Home) (' + [c0, c1, c2, c3.step].join(', ') + ')');
+  const r = await runLesson(d, page, 'dice', acts);
+  lessonOk(t, 'dice', r, 13);
+  t(words.join(' ') === exp.join(' '), 'lesson "dice": fifty 1s give the 12 words SeedSigner makes (SHA-256 of the rolls, @scure/bip39): ' + exp.slice(0, 3).join(' ') + ' ...');
+  t((await d.state()).view === 'SSSeedOptionsView' && (await d.state()).title === fpOf(rootOf(exp.join(' '))), 'lesson "dice": it ends on the seed\'s menu, under the fingerprint of those words (' + fpOf(rootOf(exp.join(' '))) + ')');
+};
+SCEN.lessons_seed = async (t, d, ctx, page) => {   // xpub, then address and message with the test seed already loaded (their load steps are passed over)
+  let r = await runLesson(d, page, 'xpub', [...LOAD, async () => {}, many('DOWN', 'PRESS'), P('PRESS'), P('PRESS'), P('PRESS'), P('PRESS'), P('PRESS')]);
+  lessonOk(t, 'xpub', r, 10);
+  const q = await readUR(page, 20000).catch(() => null), qr = q ? null : await d.readQR();
+  t((await d.state()).view === 'SSSeedExportXpubQRDisplayView', 'lesson "xpub": it ends on the xpub QR code');
+  r = await runLesson(d, page, 'address', [null, null, null, toHomeAny, async (d) => { await waitCam(d, 'address'); await d.pick(/^Scan$/); }, P('PRESS')]);
+  lessonOk(t, 'address', r, 6, [0, 1, 2]);
+  { // review L18: with the test seed loaded, the load steps are passed over, so BACK has nowhere to go and is off
+    await page.selectOption('#ssLearnPick', 'address'); await page.click('#ssLearnGo'); await d.lessonTicks(2);
+    const b = await d.ev(() => ({ dis: document.getElementById('ssLearnBack').disabled, step: ssLearn.step }));
+    t(b.dis && b.step === 3, 'review L18: a lesson whose first steps are passed over starts after them with BACK off (the device is not on Home, so it waits at step 4) (' + JSON.stringify(b) + ')'); }
+  const f = await screenFields(d, ['address', 'verified_index', 'verified_index_is_change']);
+  t(f.address === addrOf(ABANDON, '', 'native', 0, 3) && f.verified_index === 3 && f.verified_index_is_change === false, 'lesson "address": the device verified receive address #3 of the test seed (' + String(f.address).slice(0, 14) + '..., the address @scure/btc-signer makes)');
+  r = await runLesson(d, page, 'message', [null, null, null, toHomeAny, async (d) => d.pick(/^Settings$/), async (d) => d.pick(/^Advanced$/), async (d) => d.pick(/^Message signing$/), async (d) => d.pick(/^Enabled$/),
+    toHomeAny, async (d) => { await waitCam(d, 'signmsg'); await d.pick(/^Scan$/); }, P('PRESS'), P('PRESS'), P('PRESS')]);
+  lessonOk(t, 'message', r, 13, [0, 1, 2]);
+  await d.idle(); const mq = await d.readQR(), k = rootOf(ABANDON).derive("m/84'/0'/0'/0/0");
+  const ms = mq ? checkMessageSig(mq.text, 'Practice message from DRYRUN', k.publicKey, 'p2wpkh') : { ok: false };
+  t(ms.ok, 'lesson "message": the QR on the device is a valid signature of "Practice message from DRYRUN" by m/84\'/0\'/0\'/0/0 of the test seed (noble)');
+};
+const lessonSign = async (t, d, ctx, page) => {   // Mainnet (the device's default): the practice wallet warns that the coins do not exist
+  const tag = 'lesson "sign" (single key, Mainnet)';
+  const r0 = runLesson(d, page, 'sign', [...LOAD, toHomeAny, async (d, page) => page.click('#ssTxGo'), async (d) => { await waitCam(d, 'tx'); await d.pick(/^Scan$/); },
+    P('PRESS'), P('PRESS'), P('PRESS'), P('PRESS'), P('PRESS'), P('PRESS'), async () => {}]);
+  const r = await r0;
+  lessonOk(t, 'sign', r, 13);
+  const p = await panel(d);
+  t(p.net && await page.textContent('#ssTxNet') === 'Mainnet: these coins don\u2019t exist; this PSBT can never be broadcast.' && p.tx.ok && /^Signed correctly/.test(p.status), tag + ': the device is on Mainnet, so the page warns "these coins don\'t exist; this PSBT can never be broadcast", and the lesson ends with "Signed correctly"');
+};
+SCEN.lessons_tx = async (t, d, ctx, page) => {   // "sign", then "multisig" with the test seed already loaded
+  await lessonSign(t, d, ctx, page);
+  const tag = 'lesson "multisig" (2-of-3, Mainnet)';
+  let origB = null, signedB = null;
+  const acts = [null, null, null, toHomeAny, async (d, page) => { await page.click('#ssTxGo'); await waitCam(d, 'tx'); origB = Uint8Array.from(await d.ev(() => Array.from(ssLearn.tx.psbt))); },
+    async (d) => d.pick(/^Scan$/), P('PRESS'), P('PRESS'), P('PRESS'), P('PRESS'), P('PRESS'),
+    async (d) => { await waitCam(d, 'descriptor'); await d.press('PRESS'); }, P('PRESS'), P('PRESS'), P('PRESS'),
+    async (d, page) => { const u = await readUR(page); signedB = u && u.bytes; }];
+  const r = await runLesson(d, page, 'multisig', acts);
+  lessonOk(t, 'multisig', r, 16, [0, 1, 2]);
+  const desc = await d.ev(() => SSController._instance.multisig_wallet_descriptor && SSController._instance.multisig_wallet_descriptor.miniscript ? true : !!SSController._instance.multisig_wallet_descriptor);
+  t(desc, tag + ': the device holds the 2-of-3 wallet descriptor it scanned from the practice wallet');
+  t((await panel(d)).tx.ok && /second cosigner/.test((await panel(d)).status), tag + ': the page says "Signed correctly" and that a second cosigner must sign too');
+  if (origB && signedB) checkPractice(t, tag, origB, signedB, { net: 'M', multi: true }); else t(false, tag + ': no signed PSBT read from the screen');
+};
+
+// ---- v2.14.0: FORGE SEED below the practice signer: the seed on the device goes into the original page's result, marked PRACTICE
+
+// ---- v2.14.0: LOAD INTO THE PRACTICE SIGNER from MAKE A SEED > Damascus (practice seeds only), by the seed's Standard SeedQR
+
+// ---- v2.16.1: the practice signer takes any seed, as a real SeedSigner does. A real seed (the page's dice method, your own dice)
+// loads from YOUR SEED with one click; while it is on the device, re-hide covers the device; CLEAR ALL wipes it.
+
+// ---- v2.16.1 review: the one-click load's edge cases. Another seed waiting on its Finalize screen is never finalized by the page;
+// with the device's passphrase setting on Required it stops at the passphrase entry and says so; with a passphrase on the page the
+// Finalize screen's own label is named and the fingerprints compared; a seed being loaded, and the passphrase screens, count for
+// re-hide even for a public seed; wipeSeed puts a held SeedQR away; going online stops the load and puts the SeedQR away, and the
+// computer's camera is never opened. Fingerprints from @scure/bip32.
+
+// ---- v2.16.1 review (tester, phone 390 x 844): the practice signer stands upright on a narrow screen, so its keys are at least 40 px
+// and its screen uses the width; the small text links have 24 px tap areas and the step bar's labels keep apart; nothing scrolls sideways
+SCEN.phone = async (t, d, ctx, page) => {
+  const c2 = await page.context().browser().newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await c2.setOffline(true);
+  const p = await c2.newPage(); await p.goto(FILE);
+  await p.waitForFunction(() => window.selfTestDone !== undefined, null, { timeout: 90000 }); await p.evaluate(() => window.selfTestDone);
+    await p.evaluate(() => ssPageOpen()); await p.waitForFunction(() => !!SSController._instance, null, { timeout: 60000 });
+  const r = await p.evaluate(() => { const box = (id) => document.getElementById(id).getBoundingClientRect();
+    const keys = ['ssKUp', 'ssKLeft', 'ssKPress', 'ssKRight', 'ssKDown', 'ssK1', 'ssK2', 'ssK3'].map((id) => box(id)), dev = box('ssDevice'), scr = box('ssScreen');
+    const overlap = keys.some((a, i) => keys.some((b, j) => i < j && a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom));
+    return { minKey: Math.min(...keys.map((k) => Math.min(k.width, k.height))), screen: Math.round(scr.width), dev: [Math.round(dev.left), Math.round(dev.right)], overlap, inDev: keys.every((k) => k.left >= dev.left && k.right <= dev.right && k.bottom <= dev.bottom), sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+  t(r.minKey >= 40 && !r.overlap && r.inDev && r.screen >= 250 && r.dev[0] >= 0 && r.dev[1] <= r.iw && r.sw <= r.iw, 'phone: the practice signer stands upright: every key at least 40 px (' + Math.round(r.minKey) + '), none overlapping, the screen ' + r.screen + ' px wide, nothing scrolls sideways (' + JSON.stringify(r.dev) + ', page ' + r.sw + ' of ' + r.iw + ')');
+  // the keys work by touch in the upright case
+  await p.waitForFunction(() => { const c = SSController._instance; return c && c.current_destination && c.current_destination.View_cls && c.current_destination.View_cls.name === 'SSMainMenuView'; }, null, { timeout: 60000 });
+  await p.evaluate(() => { showTab('practice'); document.getElementById('ssDevice').scrollIntoView(); }); await p.tap('#ssKRight');
+  const sel = await p.waitForFunction(() => { const s = SSController._instance.current_destination.view.screen; return s && s.selected_button === 1 ? 1 : null; }, null, { timeout: 30000 }).then(() => 1).catch(() => 0);
+  t(sel === 1, 'phone: a tap on the joystick key moves the selection on the device');
+  await c2.close();
+  // second review: the keys stay at least 40 px down to a 320 px wide phone, with no overlap and no sideways scroll
+  for (const [w, h] of [[320, 640], [340, 700]]) {
+    const c3 = await page.context().browser().newContext({ viewport: { width: w, height: h }, isMobile: true, hasTouch: true }); await c3.setOffline(true);
+    const q = await c3.newPage(); await q.goto(FILE);
+    await q.waitForFunction(() => window.selfTestDone !== undefined, null, { timeout: 90000 }); await q.evaluate(() => window.selfTestDone);
+        await q.evaluate(() => ssPageOpen()); await q.waitForFunction(() => !!SSController._instance, null, { timeout: 60000 });
+    const k = await q.evaluate(() => { const ks = ['ssKUp', 'ssKLeft', 'ssKPress', 'ssKRight', 'ssKDown', 'ssK1', 'ssK2', 'ssK3'].map((id) => document.getElementById(id).getBoundingClientRect()), dev = document.getElementById('ssDevice').getBoundingClientRect();
+      return { min: Math.min(...ks.map((b) => Math.min(b.width, b.height))), overlap: ks.some((a, i) => ks.some((b, j) => i < j && a.left < b.right - 0.5 && b.left < a.right - 0.5 && a.top < b.bottom - 0.5 && b.top < a.bottom - 0.5)), inDev: ks.every((b) => b.left >= dev.left - 0.5 && b.right <= dev.right + 0.5 && b.bottom <= dev.bottom + 0.5), sw: document.documentElement.scrollWidth, iw: innerWidth }; });
+    t(k.min >= 40 && !k.overlap && k.inDev && k.sw <= k.iw, 'phone ' + w + ' px: every practice signer key at least 40 px (' + k.min.toFixed(1) + '), none overlapping, inside the case, nothing scrolls sideways');
+    await c3.close();
+  }
+};
+
+// ---- v2.14.0: easy to find.
+
+// ---- v2.14.0: easy to find. The card right under the header is on screen when the page opens (desktop and phone, after the
+// start notice), and OPEN PRACTICE SIGNER and MENU > PRACTICE SIGNER both open CHECK A BACKUP, the box and the device, with focus.
+async function cardOnLoad(browser, w, h, mobile) {
+  const ctx = await browser.newContext({ viewport: { width: w, height: h }, isMobile: mobile, hasTouch: mobile }); await ctx.setOffline(true);
+  const page = await ctx.newPage(); await page.goto(FILE);
+  await page.waitForFunction(() => window.selfTestDone !== undefined, null, { timeout: 90000 }); await page.evaluate(() => window.selfTestDone);
+  const go = await page.$('#sgGo'); if (go && await go.isVisible()) await go.click();
+  await page.waitForFunction(() => !document.getElementById('startGate'), null, { timeout: 30000 }); await page.evaluate(() => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r))));   // the start notice is gone, the page laid out again
+  const r = await page.evaluate(() => { const c = document.getElementById('ssPromo'), b = document.getElementById('ssPromoBtn'), cr = c.getBoundingClientRect(), br = b.getBoundingClientRect(), s = c.querySelector('span'), cs = getComputedStyle(b);
+    return { top: cr.top, bottom: cr.bottom, h: innerHeight, y: scrollY, bvis: br.bottom <= innerHeight && br.top >= 0, text: s.textContent, btn: b.textContent, gold: !b.classList.contains('secondary'), bg: cs.backgroundColor, lines: Math.round(s.getBoundingClientRect().height / parseFloat(getComputedStyle(s).fontSize) / 1.15), under: !!document.querySelector('header #startRow #heirNew + #ssPromo'), heirGold: !document.getElementById('heirBtn').classList.contains('secondary') }; });
+  await ctx.close(); return r;
+}
+
+// ================================================================ v2.17.0: Use it for real (ss_own.js): your own PSBT, address, descriptor, message
+// A real seed (not public: made here from dice rolls with @scure/bip39), loaded with LOAD INTO THE PRACTICE SIGNER. A PSBT built here
+// with @scure/btc-signer (one input of this seed, one of another seed: mixed inputs; a payment and change) is pasted as base64 next to
+// the device and held up; the device reviews it (its own screens, read here), asks the page's question before it signs (Playwright
+// answers it), and shows the signed PSBT as an animated UR. The QR is read back from the screen with jsqr + bc-ur, and must be byte for
+// byte the base64 the page gives to copy and the .psbt file it saves; its signature must be btc-signer's own (low R, RFC 6979), verify
+// with noble, and finalize with btc-signer after the other seed signs. Also: the wrong network is refused at Approve, No to the question
+// signs nothing, online asks with the ONLINE warning, a message signed and checked by public key recovery, and CLEAR ALL wipes it all.
+const REAL_MN = diceWords('6152433615243362514', 12), REAL = rootOf(REAL_MN), FPR = fpOf(REAL);
+function ownPsbt(o = {}) {   // P2WPKH: input 0 of REAL (m/84'/coin'/0'/0/2), input 1 of seed C (another signer); pay EXT1 or a tb1 address; change /1/4
+  const coin = o.test ? 1 : 0, net = o.test ? btc.TEST_NETWORK : btc.NETWORK, tx = new btc.Transaction(), C = R2.C, p0 = `m/84'/${coin}'/0'/0/2`, p1 = `m/84'/${coin}'/0'/0/0`;
+  const k0 = REAL.derive(p0), k1 = C.derive(p1);
+  tx.addInput({ txid: txid2(21), index: 1, witnessUtxo: { script: btc.p2wpkh(k0.publicKey).script, amount: 400000n }, bip32Derivation: [[k0.publicKey, deriv(REAL, p0)]] });
+  if (o.mixed !== false) tx.addInput({ txid: txid2(22), index: 0, witnessUtxo: { script: btc.p2wpkh(k1.publicKey).script, amount: 100000n }, bip32Derivation: [[k1.publicKey, deriv(C, p1)]] });
+  tx.addOutput({ script: btc.p2wpkh(R2.D.derive(`m/84'/${coin}'/0'/0/0`).publicKey).script, amount: 300000n });
+  const cp = `m/84'/${coin}'/0'/1/4`, ck = REAL.derive(cp);
+  tx.addOutput({ script: btc.p2wpkh(ck.publicKey).script, amount: (o.mixed !== false ? 198500n : 98500n), bip32Derivation: [[ck.publicKey, deriv(REAL, cp)]] });
+  return { b64: Buffer.from(tx.toPSBT(0)).toString('base64'), k0, k1, change: btc.p2wpkh(ck.publicKey, net).address, pay: btc.p2wpkh(R2.D.derive(`m/84'/${coin}'/0'/0/0`).publicKey, net).address };
+}
+const ownState = (page) => page.evaluate(() => ({ st: document.getElementById('ssOwnStatus').textContent, cls: document.getElementById('ssOwnStatus').className,
+  warns: [...document.querySelectorAll('#ssOwnWarns li')].map((x) => (x.className === 'bad' ? '!' : x.className === 'warn' ? '~' : '') + x.textContent), out: document.getElementById('ssOwnOut').hidden ? null : { say: document.getElementById('ssOwnOutSay').textContent, cls: document.getElementById('ssOwnOutSay').className, text: document.getElementById('ssOwnOutText').value },
+  held: ssLearnCam.frames ? ssLearnCam.key : '', parts: ssLearnCam.frames ? ssLearnCam.frames.length : 0 }));
+async function ownLoad(t, d, page) {
+  await d.waitView('SSMainMenuView');
+  await page.evaluate((m) => vfSignerLoadSeed(m), REAL_MN);
+  const L = await until(() => d.ev((w) => /^Loaded: /.test(document.getElementById('ssLoadStatus').textContent) && ssLearnSeeds().some((q) => q.mnemonic_str === w) && !ssAuto.on, REAL_MN), 120000);
+  t(L, 'own: the real seed ' + FPR + ' (@scure/bip32) is loaded with LOAD INTO THE PRACTICE SIGNER');
+  await d.back('SSMainMenuView');
+}
+async function ownHold(page, text) { await page.fill('#ssOwnIn', text); await page.click('#ssOwnGo'); return until(async () => { const x = await ownState(page); return x.held === 'own' ? x : null; }, 30000) || ownState(page); }
+async function ownReview(d) {   // Home > Scan, the seed, then Next through the review screens to Sign Transaction; returns what they showed
+  await d.pick(/^Scan$/); await d.waitView('SSPSBTSelectSeedView'); await d.pick(new RegExp('^' + FPR + '$'));
+  const seen = {};
+  for (let n = 0; n < 12; n++) {
+    const s = await d.waitView((await d.state()).view);
+    if (s.view === 'SSPSBTFinalizeView') return seen;
+    if (s.view === 'SSPSBTOverviewView') Object.assign(seen, await screenFields(d, ['spend_amount', 'change_amount', 'fee_amount', 'num_inputs', 'destination_addresses']));
+    if (s.view === 'SSPSBTMathView') seen.input = amountOf((await screenFields(d, ['input_amount'])).input_amount);
+    if (s.view === 'SSPSBTChangeDetailsView') { const f = await screenFields(d, ['address', 'amount', 'is_change_addr_verified']); seen.changeAddr = f.address; seen.changeOk = f.is_change_addr_verified; }
+    if (s.view === 'SSPSBTAddressDetailsView') seen.payAddr = (await screenFields(d, ['address'])).address;
+    await d.press('PRESS');
+  }
+  throw new Error('the review never reached Sign Transaction: ' + JSON.stringify(await d.state()));
+}
+SCEN.own_psbt = async (t, d, ctx, page) => {
+  const asked = []; page.on('dialog', (dl) => { if (/real seed/.test(dl.message())) asked.push(dl.message()); });
+  await ownLoad(t, d, page);
+  const P = ownPsbt(), pre = await ownHold(page, P.b64);
+  t(pre.parts >= 2 && /Held up to the device’s camera: your PSBT/.test(pre.st) && pre.warns.some((w) => /^1 of 2 inputs belong to seed /.test(w)) && pre.warns.some((w) => w.startsWith('Seed ' + FPR + ' can sign. The device will show 500,000 sats in from 2 inputs, 300,000 sats to 1 address, 198,500 sats back as change, and a fee of 1,500 sats')),
+    'own PSBT pasted as base64: held up as an animated UR (' + pre.parts + ' parts); the page says 1 of 2 inputs is this seed\'s and what the device will show (' + pre.warns.join(' | ').slice(0, 300) + ')');
+  const seen = await ownReview(d);
+  t(seen.num_inputs === 2 && seen.spend_amount === 300000 && seen.change_amount === 198500 && seen.fee_amount === 1500 && seen.input === 500000 && seen.payAddr === P.pay && seen.changeAddr === P.change && seen.changeOk === true,
+    'own PSBT: the device reviews it as SeedSigner does: 500,000 in, 300,000 to ' + P.pay.slice(0, 12) + '..., change 198,500 verified at ' + P.change.slice(0, 12) + '..., fee 1,500 (' + JSON.stringify(seen).slice(0, 200) + ')');
+  // No to the question: nothing is signed, the device says Not signed and goes back to Sign Transaction
+  await page.evaluate(() => { window.__c0 = window.confirm; window.confirm = (q) => { window.__q = q; return false; }; });
+  await d.press('PRESS'); let s = await d.waitView('SSErrorView');
+  const no = await page.evaluate(() => { window.confirm = window.__c0; return { q: window.__q, st: document.getElementById('ssOwnStatus').textContent, sigs: SSPSBTParser.sig_count(SSController._instance.psbt) }; });
+  t(/^Sign this transaction with your real seed /.test(no.q) && /This computer looks offline/.test(no.q) && /Not signed/.test(s.headline) && no.sigs === 0 && /^Not signed: you chose not to sign/.test(no.st), 'own PSBT: No to the page\'s question signs nothing; the device shows Not signed and the page says so (' + s.headline + ')');
+  await d.press('PRESS'); await d.waitView('SSPSBTFinalizeView');
+  await d.press('PRESS'); await d.waitView('SSPSBTSignedQRDisplayView');   // Yes (Playwright answers the question)
+  t(asked.length === 1 && /This computer looks offline/.test(asked[0]) && /Check every address and amount/.test(asked[0]), 'own PSBT: before it signs, the page asks to confirm the outputs are checked and the computer is offline (' + (asked[0] || '').slice(0, 80) + '...)');
+  const r = await readUR(page);
+  const out = await until(async () => { const x = await ownState(page); return x.out ? x : null; }, 30000);
+  const signedB = r ? r.bytes : null, outB = out ? b64b(out.out.text) : null;
+  t(!!r && !!outB && Buffer.compare(Buffer.from(signedB), Buffer.from(outB)) === 0, 'own PSBT: the animated QR on the device (read with jsqr and bc-ur, ' + (r ? r.parts : 0) + ' parts) is byte for byte the base64 the page gives to copy (' + (outB ? outB.length : 0) + ' bytes)');
+  t(!!out && /^Signed by seed /.test(out.out.say) && /ss-banner ok/.test(out.out.cls) && /checked by this page’s own code: valid/.test(out.out.say) && !/PRACTICE/.test(out.out.say), 'own PSBT: a real seed\'s signature is not marked PRACTICE; the page checked it (' + (out ? out.out.say.slice(0, 120) : '') + ')');
+  // the .psbt file is the same bytes
+  const [dl] = await Promise.all([page.waitForEvent('download', { timeout: 30000 }), page.click('#ssOwnSave')]);
+  const fb = fs.readFileSync(await dl.path());
+  t(outB && Buffer.compare(fb, Buffer.from(outB)) === 0 && dl.suggestedFilename() === 'dryrun-signed-' + FPR + '.psbt', 'own PSBT: SAVE .PSBT FILE saves the same bytes as ' + dl.suggestedFilename());
+  // independent checks: btc-signer's own signature (low R), noble verify, and the transaction finalizes with the other signer's signature
+  if (signedB) {
+    const orig = btc.Transaction.fromPSBT(b64b(P.b64)), sg = btc.Transaction.fromPSBT(signedB), ps = sg.getInput(0).partialSig || [], ps1 = sg.getInput(1).partialSig || [];
+    const h = orig.preimageWitnessV0(0, btc.OutScript.encode({ type: 'pkh', hash: btc.OutScript.decode(orig.getInput(0).witnessUtxo.script).hash }), btc.SigHash.ALL, 400000n);
+    // the signature a real signer makes: RFC 6979, low S, ground (extra data 1, 2, ...) until the DER form is at most 70 bytes, as embit
+    // (SeedSigner) and Bitcoin Core do (btc-signer's own grinding starts at 0, so it is not the reference)
+    let es = secp256k1.sign(h, P.k0.privateKey, { prehash: false, lowS: true }), gn = 1;
+    while (es.toDERRawBytes().length > 70) { const e = new Uint8Array(32); e[0] = gn & 255; gn++; es = secp256k1.sign(h, P.k0.privateKey, { prehash: false, lowS: true, extraEntropy: e }); }
+    const want = Uint8Array.from([...es.toDERRawBytes(), 1]);
+    t(ps.length === 1 && ps1.length === 0 && hx(ps[0][1]) === hx(want) && secp256k1.verify(ps[0][1].slice(0, -1), h, P.k0.publicKey, { prehash: false, format: 'der', lowS: true }), 'own PSBT: input 0 (this seed) has the signature a real signer makes (RFC 6979, low S, low R as embit and Bitcoin Core grind) byte for byte, which verifies with noble (BIP-143, SIGHASH_ALL); input 1 (another seed) is left for its signer (' + JSON.stringify({ n: ps.length, n1: ps1.length, same: ps.length ? hx(ps[0][1]) === hx(want) : null, got: ps.length ? hx(ps[0][1]).slice(0, 20) : '', want: hx(want).slice(0, 20) }) + ')');
+    const fin = btc.Transaction.fromPSBT(b64b(P.b64)); fin.combine(sg); fin.signIdx(R2.C.derive("m/84'/0'/0'/0/0").privateKey, 1);
+    let ok2 = false; try { fin.finalize(); ok2 = fin.extract().length > 0; } catch (e) { ok2 = false; }
+    t(ok2, 'own PSBT: btc-signer combines it, the other signer signs input 1, and the transaction finalizes');
+  }
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+  // the wrong network: a Testnet PSBT while the device is on Mainnet is refused at Approve
+  const PT = ownPsbt({ test: true, mixed: false }), wt = await ownHold(page, PT.b64);
+  t(wt.warns.some((w) => /^!This PSBT is for Testnet or Regtest, but the device is set to Mainnet\./.test(w)), 'wrong network: the page warns before the scan (' + (wt.warns[0] || '').slice(0, 80) + ')');
+  const n0 = asked.length; await ownReview(d); await d.press('PRESS'); const wv = await d.waitView('SSErrorView');
+  const wst = (await ownState(page)).st, wsig = await d.ev(() => SSPSBTParser.sig_count(SSController._instance.psbt));
+  t(/Wrong network/.test(wv.headline) && wsig === 0 && asked.length === n0 && /^Not signed: This PSBT is for Testnet or Regtest, but the device is set to Mainnet\./.test(wst), 'wrong network: Approve on the device is refused with "Wrong network", nothing signed, no question asked (' + wst.slice(0, 90) + ')');
+  await d.press('PRESS'); await d.waitView('SSPSBTFinalizeView'); await d.back('SSMainMenuView');
+  // CLEAR ALL wipes the box, the output and the device (DRYRUN has no re-hide: that the original page check is left out)
+  await ownHold(page, P.b64);
+  await page.evaluate(() => clearAll()); await until(() => d.ev(() => !SSController._instance), 30000);
+  const w = await page.evaluate(() => ({ inp: document.getElementById('ssOwnIn').value, msg: document.getElementById('ssMsgIn').value, out: document.getElementById('ssOwnOut').hidden, text: document.getElementById('ssOwnOutText').value, own: ssOwn.out, psbt: ssOwn.psbt, held: !!ssLearnCam.frames }));
+  t(!w.inp && !w.msg && w.out && !w.text && !w.own && !w.psbt && !w.held, 'CLEAR ALL: your PSBT box, the message box, the signed output and what was held up are wiped (' + JSON.stringify(w) + ')');
+};
+// online: the question carries the ONLINE warning (and a real seed's load asks first: Playwright says yes to both)
+SCEN.own_online = async (t, d, ctx, page) => {
+  const asked = []; page.on('dialog', (dl) => asked.push(dl.message()));
+  await d.waitView('SSMainMenuView');
+  t(await page.evaluate(() => navigator.onLine) === true, 'own (online): this browser context is online');
+  await page.evaluate((m) => vfSignerLoadSeed(m), REAL_MN);
+  await until(() => d.ev(() => /^Loaded: /.test(document.getElementById('ssLoadStatus').textContent) && !ssAuto.on), 120000); await d.back('SSMainMenuView');
+  const P = ownPsbt({ mixed: false }); await ownHold(page, P.b64); await ownReview(d);
+  await d.press('PRESS'); await d.waitView('SSPSBTSignedQRDisplayView');
+  const q = asked.find((x) => /^Sign this transaction/.test(x)) || '';
+  t(/THIS COMPUTER IS ONLINE\. A browser is not a hardware signer/.test(q), 'own (online): signing a real seed\'s PSBT online asks with the ONLINE warning, and Yes signs (' + q.slice(0, 60) + '...)');
+  const out = await until(async () => { const x = await ownState(page); return x.out ? x : null; }, 30000);
+  t(!!out && /Signed by seed /.test(out.out.say), 'own (online): the signed PSBT comes back to the page');
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+  // a message, signed online with the real seed: the question, then the signature, checked here by public key recovery (noble)
+  await d.pick(/^Settings$/); await d.pick(/^Advanced$/); await d.pick(/Message signing/); await d.pick(/^Enabled$/); await d.back('SSMainMenuView');
+  const MSG = 'the original page v2.17.0 real message';
+  await page.fill('#ssMsgIn', MSG); await page.fill('#ssMsgIdx', '3'); await page.click('#ssMsgGo'); await until(async () => (await ownState(page)).held === 'own', 15000);
+  await d.pick(/^Scan$/); await d.waitView('SSSeedSelectSeedView'); await d.pick(new RegExp('^' + FPR));
+  for (let n = 0; n < 6; n++) { const s = await d.waitView((await d.state()).view); if (s.view === 'SSSeedSignMessageSignedMessageQRView') break; await d.press('PRESS'); }
+  const qm = asked.find((x) => /^This computer is online\. Sign this message/.test(x));
+  const mo = await until(async () => { const x = await ownState(page); return x.out && /BEGIN BITCOIN SIGNED MESSAGE/.test(x.out.text) ? x : null; }, 30000);
+  const k = REAL.derive("m/84'/0'/0'/0/3"), addr = btc.p2wpkh(k.publicKey).address;
+  const m = mo && /-----BEGIN BITCOIN SIGNED MESSAGE-----\n([\s\S]*)\n-----BEGIN SIGNATURE-----\n(\S+)\n(\S+)\n-----END BITCOIN SIGNED MESSAGE-----/.exec(mo.out.text);
+  t(!!qm && !!m && m[1] === MSG && m[2] === addr && checkMessageSig(m[3], MSG, k.publicKey, 'p2wpkh').ok && /checks out/.test(mo.out.say), 'own (online): a message signed with receive address #3 (' + addr.slice(0, 12) + '...) after the question; the signature recovers to its key (noble) and the page checked it');
+  const qr = await d.readQR();
+  t(!!qr && m && qr.text === m[3], 'own: the device\'s QR holds the same signature the page gives to copy');
+};
+// ================================================================ v2.17.0 review and hands-on test: real signing, end to end
+// own_fix1: a forged previous transaction refused on the device (H1); sequence 0 kept (L1); a new item puts the last output away
+//           (tester 1); a partly signed result in an amber banner (tester 4); nothing to sign: no question (tester 6)
+// own_fix2: multisig change claimed only: red note, and a second question naming the amount after Skip verification (M1); a
+//           foreign descriptor: red note (M2); the wallet's own descriptor stays loaded after Home and verifies change (tester 2);
+//           change it does not make: Address Verification Failed
+// own_fix3: a message offline asks (tester 9); an empty address number (tester 12); a Testnet address on a Mainnet device (tester
+//           12); secrets refused and cleared, a file of seed words never in the box, the last item put away (L2, tester 7); 3 MB of
+//           text answered at once (tester 3); a PSBT the device cannot read is not held up (tester 5)
+const ownAsk = (page, answers) => page.evaluate((a) => { window.__asked = []; window.__ans = a.slice(); window.__c0 = window.__c0 || window.confirm; window.confirm = (q) => { window.__asked.push(q); return window.__ans.length ? window.__ans.shift() : true; }; }, answers);
+const ownAsked = (page) => page.evaluate(() => window.__asked || []);
+const ownP2wpkh = (ins, outs) => {   // ins: [path, amount, {seq, sh, root}], outs: [script, amount, [path of REAL]?]
+  const tx = new btc.Transaction({ allowUnknownSighash: true });
+  ins.forEach(([p, a, o = {}], i) => { const r = o.root || REAL, k = r.derive(p); tx.addInput({ txid: txid2(40 + i), index: i, ...(o.seq !== undefined ? { sequence: o.seq } : {}), ...(o.sh !== undefined ? { sighashType: o.sh } : {}), witnessUtxo: { script: btc.p2wpkh(k.publicKey).script, amount: a }, bip32Derivation: [[k.publicKey, deriv(r, p)]] }); });
+  for (const [sc, a, cp] of outs) { const k = cp ? REAL.derive(cp) : null; tx.addOutput({ script: sc || btc.p2wpkh(k.publicKey).script, amount: a, ...(k ? { bip32Derivation: [[k.publicKey, deriv(REAL, cp)]] } : {}) }); }
+  return { tx, b64: Buffer.from(tx.toPSBT(0)).toString('base64') };
+};
+const PAY1 = btc.p2wpkh(R2.D.derive("m/84'/0'/0'/0/0").publicKey).script;
+async function ownToFinalize(d, pickRe) {   // Home > Scan, the seed, then Next (and Continue) through the review to Sign Transaction
+  await d.pick(/^Scan$/); await d.waitView('SSPSBTSelectSeedView'); await d.pick(pickRe || new RegExp('^' + FPR + '$'));
+  for (let n = 0; n < 14; n++) { const s = await d.waitView((await d.state()).view); if (s.view === 'SSPSBTFinalizeView') return s; if (s.view === 'SSErrorView' || s.view === 'SSPSBTAddressVerificationFailedView') return s; await d.press('PRESS'); }
+  throw new Error('the review never reached Sign Transaction: ' + JSON.stringify(await d.state()));
+}
+SCEN.own_fix1 = async (t, d, ctx, page) => {
+  await ownLoad(t, d, page);
+  // H1: a P2PKH coin of 10 BTC, with a made-up previous transaction of 1.0001 BTC put in its place
+  { const p = "m/44'/0'/0'/0/7", k = REAL.derive(p), pay = btc.p2pkh(k.publicKey);
+    const prev = (amt, n) => { const x = new btc.Transaction(); x.addOutput({ script: pay.script, amount: amt }); x.addInput({ txid: txid2(n), index: 0, finalScriptSig: Uint8Array.of(0x51) }); return x; };
+    const real = prev(1000000000n, 9), fake = prev(100010000n, 8), tx = new btc.Transaction();
+    tx.addInput({ txid: real.id, index: 0, nonWitnessUtxo: real.toBytes(true, false), bip32Derivation: [[k.publicKey, deriv(REAL, p)]] }); tx.addOutput({ script: PAY1, amount: 100000000n });
+    const g = Buffer.from(tx.toPSBT(0)), rb = Buffer.from(real.toBytes(true, false)), at = g.indexOf(rb), forged = Buffer.concat([g.subarray(0, at), Buffer.from(fake.toBytes(true, false)), g.subarray(at + rb.length)]);
+    const pre = await ownHold(page, forged.toString('base64'));
+    t(pre.warns.some((w) => /^!Input 0: its full previous transaction is not the one it spends \(the txid does not match\)/.test(w)), 'H1: a forged previous transaction is flagged red before the scan (' + (pre.warns[0] || '').slice(0, 80) + ')');
+    await ownAsk(page, []); const s = await ownToFinalize(d); await d.press('PRESS'); const e = await d.waitView('SSErrorView'); const st = (await ownState(page)).st;
+    t(s.view === 'SSPSBTFinalizeView' && /Forged coin\?/.test(e.headline) && /not the coin it spends/.test(e.text) && (await ownAsked(page)).length === 0 && /^Not signed: input 0: its full previous transaction is not the one it spends/.test(st) && await d.ev(() => SSPSBTParser.sig_count(SSController._instance.psbt)) === 0, 'H1: the device refuses to sign it, with the reason on its screen ("' + e.headline + '") and on the page; no question, no signature');
+    await d.press('PRESS'); await d.waitView('SSPSBTFinalizeView'); await d.back('SSMainMenuView'); }
+  // L1: sequence 0 is signed as the wallet made it; btc-signer finalizes it
+  { const P = ownP2wpkh([["m/84'/0'/0'/0/2", 400000n, { seq: 0 }]], [[PAY1, 300000n], [null, 99000n, "m/84'/0'/0'/1/4"]]);
+    await ownHold(page, P.b64); await ownAsk(page, [true]); await ownToFinalize(d); await d.press('PRESS'); await d.waitView('SSPSBTSignedQRDisplayView');
+    const out = await until(async () => { const x = await ownState(page); return x.out ? x : null; }, 30000);
+    let same = false, fin = false; if (out && out.out.text) { const sg = btc.Transaction.fromPSBT(b64b(out.out.text)); same = sg.getInput(0).sequence === 0 && hx(sg.unsignedTx) === hx(P.tx.unsignedTx); try { const f = btc.Transaction.fromPSBT(b64b(P.b64)); f.combine(sg); f.finalize(); fin = f.extract().length > 0; } catch (e) { fin = false; } }
+    t(same && fin && /: valid/.test(out.out.say) && /ss-banner ok/.test(out.out.cls), 'L1: an input with sequence 0 is signed as the wallet made it (txid unchanged), checked valid, and btc-signer finalizes it');
+    await d.press('PRESS'); await d.waitView('SSMainMenuView');
+    // tester 1: holding up a new item puts that output away
+    await ownHold(page, ownP2wpkh([["m/84'/0'/0'/0/2", 400000n]], [[PAY1, 399000n]]).b64);
+    t(!(await ownState(page)).out, 'tester 1: holding up a new PSBT puts the last signed output away'); }
+  // tester 4: two inputs of the seed, one asking for SIGHASH_NONE: the device signs one; the page says which, in amber
+  { const P = ownP2wpkh([["m/84'/0'/0'/0/2", 200000n], ["m/84'/0'/0'/0/3", 200000n, { sh: 2 }]], [[PAY1, 399000n]]);
+    const pre = await ownHold(page, P.b64); await ownAsk(page, [true]); await ownToFinalize(d); await d.press('PRESS'); await d.waitView('SSPSBTSignedQRDisplayView');
+    const out = await until(async () => { const x = await ownState(page); return x.out ? x : null; }, 30000);
+    t(pre.warns.some((w) => /^~The device will leave input 1 of seed [0-9a-f]{8} unsigned/.test(w)) && !!out && /ss-banner warn/.test(out.out.cls) && /Signed input 0 of this seed’s inputs; NOT signed: input 1 /.test(out.out.say), 'tester 4: a partly signed result names the signed and unsigned inputs, in an amber banner (' + (out ? out.out.say.slice(-150) : 'none') + ')');
+    await d.press('PRESS'); await d.waitView('SSMainMenuView'); }
+  // tester 6: a PSBT of another seed: no question, Signing Failed, and the page says nothing was signed
+  { const P = ownP2wpkh([["m/84'/0'/0'/0/0", 200000n, { root: R2.C }]], [[PAY1, 199000n]]);
+    await ownHold(page, P.b64); await ownAsk(page, []); await ownToFinalize(d, new RegExp('^' + FPR)); await d.press('PRESS'); const e = await d.waitView('SSPSBTSigningErrorView');
+    const st = (await ownState(page)).st;
+    t(e.view === 'SSPSBTSigningErrorView' && (await ownAsked(page)).length === 0 && /^Nothing signed: seed [0-9a-f]{8} cannot add a signature/.test(st), 'tester 6: a PSBT the seed cannot sign asks nothing, ends on Signing Failed, and the page says "Nothing signed" (' + st.slice(0, 60) + ')'); }
+};
+function ownMs(o = {}) {   // 2-of-3 P2WSH of REAL, B and C at m/48'/0'/0'/2' (no xpubs in the PSBT): in /0/5 5,000,000; pay 3,000,000; change /1/2, or to the attacker's 2-of-3
+  const acct = "m/48'/0'/0'/2'", roots = [REAL, R2.B, R2.C], hd = roots.map((r) => r.derive(acct)), xh = [0, 1, 2].map((i) => R2.D.derive("m/48'/0'/" + (i + 5) + "'/2'"));
+  const ms = (K, b, i) => { const pubs = K.map((a) => a.deriveChild(b).deriveChild(i).publicKey), sorted = pubs.slice().sort((x, y) => Buffer.compare(Buffer.from(x), Buffer.from(y))); return { pay: btc.p2wsh(btc.p2ms(2, sorted)), ders: pubs.map((p, j) => [p, deriv(roots[j], acct + '/' + b + '/' + i)]) }; };
+  const i0 = ms(hd, 0, 5), c0 = ms(o.evil ? xh : hd, 1, 2), tx = new btc.Transaction();
+  tx.addInput({ txid: txid2(50), index: 0, witnessUtxo: { script: i0.pay.script, amount: 5000000n }, witnessScript: i0.pay.witnessScript, bip32Derivation: i0.ders });
+  tx.addOutputAddress(EXT1, 3000000n); tx.addOutput({ script: c0.pay.script, amount: 1998000n, witnessScript: c0.pay.witnessScript, bip32Derivation: c0.ders });
+  const desc = (K) => 'wsh(sortedmulti(2,' + K.map((a, j) => '[' + fpOf(roots[j]) + '/48h/0h/0h/2h]' + a.publicExtendedKey + '/0/*').join(',') + '))';
+  return { b64: Buffer.from(tx.toPSBT(0)).toString('base64'), descriptor: desc(hd), foreign: desc(xh), change: c0.pay.address };
+}
+SCEN.own_fix2 = async (t, d, ctx, page) => {
+  await ownLoad(t, d, page);
+  // M1: no descriptor and no xpubs: claimed change, red; Skip verification, Approve: a second question names the amount; No signs nothing
+  const evil = ownMs({ evil: true }), good = ownMs();
+  let pre = await ownHold(page, evil.b64);
+  t(pre.warns.some((w) => /^!Output 1 \(1,998,000 sats\) is claimed change, NOT verified: no wallet descriptor is loaded on the device and the PSBT has no cosigner keys/.test(w)), 'M1: change that only the PSBT claims is called "claimed change, NOT verified" in red before the scan');
+  await d.pick(/^Scan$/); await d.waitView('SSPSBTSelectSeedView'); await d.pick(new RegExp('^' + FPR + '$'));
+  for (let n = 0; n < 8; n++) { const s = await d.waitView((await d.state()).view); if (s.view === 'SSPSBTChangeDetailsView') break; await d.press('PRESS'); }
+  let s = await d.state(); t(s.labels && s.labels[0] === 'Verify multisig change', 'M1: the device offers Verify multisig change and Skip verification');
+  await d.pick(/Skip verification/); await d.waitView('SSPSBTFinalizeView'); await ownAsk(page, [true, false]); await d.press('PRESS'); const e = await d.waitView('SSErrorView');
+  let q = await ownAsked(page);
+  t(q.length === 2 && /^The device did NOT verify that this change comes back to your multisig wallet:\n\n- output 1: 1,998,000 sats to /.test(q[1]) && /Not signed/.test(e.headline) && await d.ev(() => SSPSBTParser.sig_count(SSController._instance.psbt)) === 0, 'M1: after Skip verification, signing asks a second question naming the 1,998,000 sats; No signs nothing');
+  await d.press('PRESS'); await d.waitView('SSPSBTFinalizeView'); await d.back('SSMainMenuView');
+  // M2: a foreign descriptor (the attacker's keys, labelled with this seed's fingerprint): the page says it is not this seed's
+  await ownHold(page, evil.foreign); await d.pick(/^Scan$/); await d.waitView('SSMultisigWalletDescriptorView');
+  const fb = await until(async () => { const x = await ownState(page); return /^The device loaded the wallet descriptor/.test(x.st) ? x : null; }, 30000);
+  t(!!fb && /NONE of the seeds on the device is in it \(it names fingerprint [0-9a-f]{8}, but the key there is not that seed’s\)/.test(fb.st) && /\bbad\b/.test(fb.cls), 'M2: a descriptor that names this seed but holds another key is called someone else\'s, in red (' + (fb ? fb.st.slice(80, 200) : '') + ')');
+  await d.press('PRESS'); await d.back('SSMainMenuView');
+  // second review M-a: an address of that foreign descriptor: the device finds it, the page says it proves nothing (red)
+  { const xh = [0, 1, 2].map((i) => R2.D.derive("m/48'/0'/" + (i + 5) + "'/2'")), pubs = xh.map((a) => a.deriveChild(0).deriveChild(4).publicKey).sort((x, y) => Buffer.compare(Buffer.from(x), Buffer.from(y)));
+    await ownHold(page, btc.p2wsh(btc.p2ms(2, pubs)).address); await d.pick(/^Scan$/);
+    const av = await until(async () => { const x = await ownState(page); return /receive address #4/.test(x.st) ? x : null; }, 120000);
+    t(!!av && /of the wallet descriptor on the device, which does not hold your seed’s key: this proves nothing about your wallet/.test(av.st) && /\bbad\b/.test(av.cls) && !/of this wallet/.test(av.st), 'M-a: an address of a foreign descriptor is found by the device, and the page says in red that this proves nothing (' + (av ? av.st.slice(0, 120) : 'none') + ')');
+    await d.press('PRESS'); await d.back('SSMainMenuView'); }
+  // the wallet's own descriptor: gold; it stays loaded after Home (tester 2), so the device verifies the change at once
+  await ownHold(page, good.descriptor); await d.pick(/^Scan$/); await d.waitView('SSMultisigWalletDescriptorView');
+  const gb = await until(async () => { const x = await ownState(page); return /^The device loaded the wallet descriptor/.test(x.st) && /Seed /.test(x.st) ? x : null; }, 30000);
+  t(!!gb && new RegExp('Seed ' + FPR + ' is in it').test(gb.st) && /ss-banner ok/.test(gb.cls), 'M2: the wallet\'s own descriptor: the page finds seed ' + FPR + ' in it (gold)');
+  await d.press('PRESS'); await d.back('SSMainMenuView');
+  t(await d.ev(() => !!SSController._instance.multisig_wallet_descriptor), 'tester 2: back on Home, the descriptor is still loaded (the original page rule: until the device is switched off)');
+  pre = await ownHold(page, good.b64);
+  t(!pre.warns.some((w) => /claimed change|NOT verified/.test(w)), 'tester 2: the review counts the change as verified by the loaded descriptor');
+  await d.pick(/^Scan$/); await d.waitView('SSPSBTSelectSeedView'); await d.pick(new RegExp('^' + FPR + '$'));
+  for (let n = 0; n < 8; n++) { s = await d.waitView((await d.state()).view); if (s.view === 'SSPSBTChangeDetailsView') break; await d.press('PRESS'); }
+  const f = await screenFields(d, ['is_change_addr_verified', 'address']);
+  t(s.labels && s.labels[0] === 'Next' && f.is_change_addr_verified === true && f.address === good.change, 'tester 2: the device verifies the multisig change against the descriptor scanned before Home');
+  await d.press('PRESS'); await d.waitView('SSPSBTFinalizeView'); await ownAsk(page, [true]); await d.press('PRESS'); await d.waitView('SSPSBTSignedQRDisplayView');
+  q = await ownAsked(page); t(q.length === 1, 'M1: verified multisig change: one question only');
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+  // change the loaded descriptor does not make: red note, and the device discards the transaction
+  pre = await ownHold(page, evil.b64);
+  t(pre.warns.some((w) => /^!Output 1 \(1,998,000 sats\) is called change, but your wallet descriptor on the device does not make it/.test(w)), 'M2: change the wallet\'s own descriptor does not make is flagged red');
+  s = await ownToFinalize(d); t(s.view === 'SSPSBTAddressVerificationFailedView', 'M2: the device says Address Verification Failed for it (' + s.view + ')');
+};
+SCEN.own_fix3 = async (t, d, ctx, page) => {
+  await ownLoad(t, d, page);
+  // tester 12: an empty address number; tester 9: a message offline asks first
+  // second review: the message box refuses the seed's own words and is cleared
+  await page.fill('#ssMsgIn', REAL_MN); await page.fill('#ssMsgIdx', '0'); await page.click('#ssMsgGo');
+  const ms0 = await until(async () => { const x = await ownState(page); return /^Not held up/.test(x.st) ? x : null; }, 15000);
+  t(!!ms0 && /The message box was cleared/.test(ms0.st) && await page.inputValue('#ssMsgIn') === '' && ms0.held === '', 'second review: seed words typed as the message are refused, the message box is cleared, nothing is held up');
+  await page.fill('#ssMsgIn', 'the original page offline message'); await page.fill('#ssMsgIdx', ''); await page.click('#ssMsgGo');
+  t(await until(async () => /^Not held up: type the number of the receive address/.test((await ownState(page)).st), 15000), 'tester 12: an empty address number is refused, not taken as 0');
+  await d.pick(/^Settings$/); await d.pick(/^Advanced$/); await d.pick(/Message signing/); await d.pick(/^Enabled$/); await d.back('SSMainMenuView');
+  await page.fill('#ssMsgIdx', '1'); await page.click('#ssMsgGo'); await until(async () => (await ownState(page)).held === 'own', 15000); await ownAsk(page, [true]);
+  await d.pick(/^Scan$/); await d.waitView('SSSeedSelectSeedView'); await d.pick(new RegExp('^' + FPR));
+  for (let n = 0; n < 6; n++) { const s = await d.waitView((await d.state()).view); if (s.view === 'SSSeedSignMessageSignedMessageQRView') break; await d.press('PRESS'); }
+  const q = await ownAsked(page), mo = await until(async () => { const x = await ownState(page); return x.out ? x : null; }, 30000);
+  t(q.length === 1 && /^Sign this message with your real seed /.test(q[0]) && /This computer looks offline/.test(q[0]) && !!mo && new RegExp('^Signed with your real seed ' + FPR + ': ').test(mo.out.say), 'tester 9: a message signed offline with a real seed asks first, and the result says it is the real seed');
+  await d.press('PRESS'); await d.waitView('SSMainMenuView');
+  // tester 12: a Testnet address on a Mainnet device: held up with a red note, and the result says so too
+  const ta = btc.p2wpkh(REAL.derive("m/84'/1'/0'/0/0").publicKey, btc.TEST_NETWORK).address, pre = await ownHold(page, ta);
+  t(pre.warns.some((w) => /^!This is a Testnet address, but the device is set to Mainnet\./.test(w)), 'tester 12: a Testnet address held up on a Mainnet device gets a red note');
+  await d.pick(/^Scan$/); await d.waitView('SSSeedSelectSeedView'); await d.pick(new RegExp('^' + FPR));
+  const vr = await until(async () => { const x = await ownState(page); return /^The device verified the address/.test(x.st) ? x : null; }, 120000);
+  t(!!vr && /receive address #0 of this wallet, on the address’s own network\. This is a Testnet address, but the device is set to Mainnet/.test(vr.st) && /\bbad\b/.test(vr.cls), 'tester 12: the verified Testnet address is said in red, with the network mismatch');
+  await d.press('PRESS'); await d.back('SSMainMenuView');
+  // L2 / tester 7: seed words pasted (numbered): refused in red, the box cleared, the address held up before put away
+  const W = REAL_MN.split(' ');
+  await ownHold(page, EXT1); const was = (await ownState(page)).held;
+  await page.fill('#ssOwnIn', W.map((x, i) => (i + 1) + '. ' + x).join('\n')); await page.click('#ssOwnGo');
+  const r1 = await until(async () => { const x = await ownState(page); return /^Not held up/.test(x.st) ? x : null; }, 15000);
+  t(was === 'own' && !!r1 && r1.held === '' && await page.inputValue('#ssOwnIn') === '' && /The box was cleared/.test(r1.st) && !W.some((x) => r1.st.includes(' ' + x + ' ')) && /\bbad\b/.test(r1.cls), 'L2 / tester 7: numbered seed words are refused in red, never repeated, the box is cleared and the address held up before is put away');
+  // a file of seed words never goes into the box
+  await page.setInputFiles('#ssOwnFile', { name: 'notes.txt', mimeType: 'text/plain', buffer: Buffer.from('my words: ' + REAL_MN + '\n') });
+  const r2 = await until(async () => { const x = await ownState(page); return /^Not read/.test(x.st) ? x : null; }, 15000);
+  t(!!r2 && await page.inputValue('#ssOwnIn') === '' && /The file was not put in the box/.test(r2.st), 'L2: a file of seed words is refused before it reaches the box');
+  // tester 3: 3 MB of text is answered at once
+  const ms = await page.evaluate(async () => { document.getElementById('ssOwnIn').value = 'A'.repeat(3000000); const t0 = performance.now(); await ssOwnGo(); return performance.now() - t0; });
+  t(ms < 3000 && /^Not held up: The device does not read this/.test((await ownState(page)).st), 'tester 3: 3 MB of "A" is refused in ' + Math.round(ms) + ' ms');
+  // tester 5: a PSBT that does not carry the coin it spends is not held up
+  const tx = new btc.Transaction(); tx.addInput({ txid: txid2(60), index: 0, bip32Derivation: [[REAL.derive("m/84'/0'/0'/0/0").publicKey, deriv(REAL, "m/84'/0'/0'/0/0")]] }); tx.addOutput({ script: PAY1, amount: 1000n });
+  await page.fill('#ssOwnIn', Buffer.from(tx.toPSBT(0)).toString('base64')); await page.click('#ssOwnGo');
+  const r3 = await until(async () => { const x = await ownState(page); return /^Not held up/.test(x.st) ? x : null; }, 15000);
+  t(!!r3 && r3.held === '' && /the device cannot read this PSBT: input 0 does not include the coin it spends/.test(r3.st), 'tester 5: a PSBT the device cannot read is not held up, and the page says why');
+};
+// ================================================================ run
+SCEN.tools.clock = true; SCEN.offline.online = true; SCEN.own_online.online = true;
+const order = ['own_psbt', 'own_online', 'own_fix1', 'own_fix2', 'own_fix3', 'lessons_dice', 'lessons_tx', 'lessons_seed', 'practice_tx', 'phone', 'review', 'psbt_msig', 'psbt_wipe', 'psbt_p2wpkh', 'psbt_p2sh', 'psbt_p2tr', 'psbt_msig_bad', 'signmsg', 'addr_single', 'addr_taproot', 'addr_multi', 'dice12', 'dice24', 'words', 'settings', 'settings_wipe', 'seedqr', 'tools', 'native', 'nested', 'taproot', 'wipe', 'offline'];
+const want = process.env.SCEN ? process.env.SCEN.split(',') : order;
+const results = [];
+async function runScenario(browser, name) {
+  const buf = []; const t = (c, m) => { buf.push([!!c, m]); };
+  const t1 = Date.now(); let h;
+  try {
+    h = await openPage(browser, name, { offline: !SCEN[name].online, clock: !!SCEN[name].clock });
+    if (name === 'tools') h.d.page_clock = async () => { await h.page.clock.fastForward(121000); };
+    await SCEN[name](t, h.d, h.ctx, h.page);
+  } catch (e) { buf.push([false, name + ': the scenario stopped: ' + String(e.stack || e).split('\n').slice(0, 3).join(' | ').slice(0, 400)]); }
+  try { if (h) await h.ctx.close(); } catch (e) { /* closed */ }
+  results.push({ name, buf, secs: Math.round((Date.now() - t1) / 1000) });
+  for (const [c, m] of buf) ok(c, '[' + name + '] ' + m);
+}
+let browser;
+try {
+  browser = await pw.chromium.launch({ args: ['--use-fake-device-for-media-stream', '--use-fake-ui-for-media-stream', '--use-file-for-fake-video-capture=' + VIDEO] });
+} catch (e) { console.log('SKIPPED chromium (not installed here: ' + String(e.message).split('\n')[0].slice(0, 80) + ')'); console.log('SIMULATOR: SKIPPED'); process.exit(0); }
+const queue = want.filter((n) => SCEN[n]); const CONC = +(process.env.SIM_CONC || 8);
+await Promise.all(Array.from({ length: Math.min(CONC, queue.length) }, async () => { while (queue.length) await runScenario(browser, queue.shift()); }));
+await browser.close();
+if (!process.env.SCEN) {
+  ok(badges.size === 1 && [...badges][0] === 'SELF-TEST PASSED (11/11)', 'the page self-test passes 11/11 in every page opened (' + [...badges].join(' / ') + ')');
+}
+ok(pageProblems.length === 0, 'no page error and no console error in any page during the whole run' + (pageProblems.length ? ': ' + pageProblems.slice(0, 4).join(' || ') : ''));
+console.log('(scenario times: ' + results.map((r) => r.name + ' ' + r.secs + 's').join(', ') + '; total ' + Math.round((Date.now() - T0) / 1000) + 's)');
+console.log('(device key taps: ' + tapStats.lost + ' dropped by a busy device and tapped again, ' + tapStats.ignored + ' not listened to by the screen, ' + tapStats.slow + ' still busy after 90 s)');
+console.log('SIMULATOR: ' + pass + ' pass, ' + fails.length + ' fail');
+if (fails.length) { console.log('FAILED:'); for (const f of fails) console.log(' - ' + f); }
+process.exit(fails.length ? 1 : 0);

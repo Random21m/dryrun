@@ -1,0 +1,31 @@
+{
+  "name": "dryrun-tests",
+  "version": "1.0.2",
+  "private": true,
+  "description": "Test dependencies for DRYRUN (the page itself has none: it is one HTML file).",
+  "license": "MIT",
+  "scripts": {
+    "build": "node tools/extract_crypto.js && node tools/build.js",
+    "test": "node tests/build.test.mjs && node tests/core.test.mjs && node tests/screens.test.mjs && node tests/offline.test.mjs && node tests/sim.test.mjs",
+    "mutation": "node tests/mutation.test.mjs"
+  },
+  "devDependencies": {
+    "@keystonehq/bc-ur-registry": "0.8.1",
+    "@ngraveio/bc-ur": "1.1.13",
+    "@scure/bip32": "^1.7.0",
+    "@scure/bip39": "^1.6.0",
+    "@scure/btc-signer": "^2.4.1",
+    "acorn": "^8.15.0",
+    "acorn-walk": "^8.3.4",
+    "bbqr": "1.2.0",
+    "fast-check": "4.10.2",
+    "jpeg-js": "0.4.4",
+    "jsdom": "^26.0.0",
+    "jsqr": "^1.4.0",
+    "lifehash": "^1.0.0",
+    "playwright-core": "1.63.0",
+    "pngjs": "7.0.0",
+    "qrcode": "1.5.4",
+    "qrcode-generator": "^1.5.2"
+  }
+}

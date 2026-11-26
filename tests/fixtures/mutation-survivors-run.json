@@ -1,0 +1,821 @@
+[
+ {
+  "name": "wordsClean",
+  "what": "?: -> always the second",
+  "at": 44,
+  "line": 2,
+  "snippet": "function wordsClean(text){ let t = String((false) ? \"\" : text); const notes = []; const in"
+ },
+ {
+  "name": "wordsClean",
+  "what": "!== -> ===",
+  "at": 416,
+  "line": 6,
+  "snippet": "s own NFKD reads them if(nk.replace(/\\s/g, \" \") === t.replace(/\\s/g, \" \")){ notes.push(\"full-width"
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 149,
+  "line": 4,
+  "snippet": "v = (t.match(WORDS_INVISIBLE) || []).length; if(false){ t = t.replace(WORDS_INVISIBLE, \"\"); notes."
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 393,
+  "line": 6,
+  "snippet": "bility forms, as BIP39's own NFKD reads them if(false){ notes.push(\"full-width letters\"); } t = nk"
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 493,
+  "line": 7,
+  "snippet": " notes.push(\"full-width letters\"); } t = nk; if(false) return {text: t, notes}; const sep = (t.m"
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 589,
+  "line": 9,
+  "snippet": "const sep = (t.match(/[,;]/g) || []).length; if(false){ t = t.replace(/[,;]/g, \" \"); notes.push(se"
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 2153,
+  "line": 23,
+  "snippet": " own ?). const parse = (src) => { let num = 1; const missing = [], toks = [], seq = [], on = ["
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 2234,
+  "line": 23,
+  "snippet": "], seq = [], on = []; let first = null, firstOn = 1; src.forEach((w, i) => { const alone ="
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 2577,
+  "line": 28,
+  "snippet": " { first = n; firstOn = toks.length; } if(false){ missing.push(n); toks.push(\"?\"); } return;"
+ },
+ {
+  "name": "wordsClean",
+  "what": "|| -> &&",
+  "at": 2594,
+  "line": 28,
+  "snippet": "stOn = toks.length; } if(nx === undefined && /^#?\\d{1,2}(?:[.):\\-]?$|[.):\\-]\\D)/.test(nx)){ "
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 2753,
+  "line": 29,
+  "snippet": "d){ num++; seq.push(+joined[1]); on.push([+joined[2], toks.length]); toks.push(joined[2]); return; }"
+ },
+ {
+  "name": "wordsClean",
+  "what": "!== -> ===",
+  "at": 3195,
+  "line": 35,
+  "snippet": "ed against no place (lone) const head = first === null && seq.length > 0 && seq[0] <= 1 && first"
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 2813,
+  "line": 30,
+  "snippet": "ength]); toks.push(joined[2]); return; } if(false){ seq.push(+lead[1]); on.push([+lead[1], tok"
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 3220,
+  "line": 35,
+  "snippet": ") const head = first !== null && seq.length > 1 && seq[0] <= 1 && first > seq[0], lone = first !"
+ },
+ {
+  "name": "wordsClean",
+  "what": "> -> >=",
+  "at": 3218,
+  "line": 35,
+  "snippet": "ne) const head = first !== null && seq.length >= 0 && seq[0] <= 1 && first > seq[0], lone = firs"
+ },
+ {
+  "name": "wordsClean",
+  "what": "> -> <=",
+  "at": 3218,
+  "line": 35,
+  "snippet": "ne) const head = first !== null && seq.length <= 0 && seq[0] <= 1 && first > seq[0], lone = firs"
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 3229,
+  "line": 35,
+  "snippet": "st head = first !== null && seq.length > 0 && seq[1] <= 1 && first > seq[0], lone = first !== null &"
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 3235,
+  "line": 35,
+  "snippet": "d = first !== null && seq.length > 0 && seq[0] <= 2 && first > seq[0], lone = first !== null && !seq"
+ },
+ {
+  "name": "wordsClean",
+  "what": "<= -> <",
+  "at": 3232,
+  "line": 35,
+  "snippet": "head = first !== null && seq.length > 0 && seq[0] < 1 && first > seq[0], lone = first !== null && !s"
+ },
+ {
+  "name": "wordsClean",
+  "what": "<= -> >",
+  "at": 3232,
+  "line": 35,
+  "snippet": "head = first !== null && seq.length > 0 && seq[0] > 1 && first > seq[0], lone = first !== null && !s"
+ },
+ {
+  "name": "wordsClean",
+  "what": "> -> >=",
+  "at": 3246,
+  "line": 35,
+  "snippet": "== null && seq.length > 0 && seq[0] <= 1 && first >= seq[0], lone = first !== null && !seq.length; "
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 3252,
+  "line": 35,
+  "snippet": "l && seq.length > 0 && seq[0] <= 1 && first > seq[1], lone = first !== null && !seq.length; if(f"
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 3663,
+  "line": 41,
+  "snippet": "on, lone, full}; }; let absent = null, said = 1, want = 0; const cnt = /^\\s*(\\d{1,2})(?:[ \\t]+"
+ },
+ {
+  "name": "wordsClean",
+  "what": "!== -> ===",
+  "at": 4085,
+  "line": 44,
+  "snippet": " && numOf(rs[0]) === 1 && rs.filter(w => numOf(w) === null).length === +cnt[1]){ t = rest; notes.pus"
+ },
+ {
+  "name": "wordsClean",
+  "what": "&& -> ||",
+  "at": 4862,
+  "line": 51,
+  "snippet": "d against the words (want). else if(rs.length || numOf(rs[0]) === 1){ const ns = rs.map(numOf).f"
+ },
+ {
+  "name": "wordsClean",
+  "what": "< -> <=",
+  "at": 4968,
+  "line": 52,
+  "snippet": "n => n !== null), N = +cnt[1]; if(ns.length <= N && ns.every((n, k) => n <= N && (k === 0 || n"
+ },
+ {
+  "name": "wordsClean",
+  "what": "<= -> <",
+  "at": 4996,
+  "line": 52,
+  "snippet": "]; if(ns.length < N && ns.every((n, k) => n < N && (k === 0 || n > ns[k - 1]))){ if(pa"
+ },
+ {
+  "name": "wordsClean",
+  "what": "> -> >=",
+  "at": 5018,
+  "line": 52,
+  "snippet": "< N && ns.every((n, k) => n <= N && (k === 0 || n >= ns[k - 1]))){ if(parse(rs).full){ absen"
+ },
+ {
+  "name": "wordsClean",
+  "what": "&& -> ||",
+  "at": 5001,
+  "line": 52,
+  "snippet": " if(ns.length < N && ns.every((n, k) => n <= N || (k === 0 || n > ns[k - 1]))){ if(parse("
+ },
+ {
+  "name": "wordsClean",
+  "what": "&& -> ||",
+  "at": 4972,
+  "line": 52,
+  "snippet": " n !== null), N = +cnt[1]; if(ns.length < N || ns.every((n, k) => n <= N && (k === 0 || n > ns"
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 5045,
+  "line": 53,
+  "snippet": " <= N && (k === 0 || n > ns[k - 1]))){ if(false){ absent = []; for(let n = 1; n <= N; n++) i"
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 6552,
+  "line": 67,
+  "snippet": " let order = null, gaps = []; if(seq.length > 2) for(let k = 1; k < seq.length; k++) if(seq["
+ },
+ {
+  "name": "wordsClean",
+  "what": "> -> >=",
+  "at": 6550,
+  "line": 67,
+  "snippet": "e. let order = null, gaps = []; if(seq.length >= 1) for(let k = 1; k < seq.length; k++) if(s"
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 6571,
+  "line": 68,
+  "snippet": ", gaps = []; if(seq.length > 1) for(let k = 2; k < seq.length; k++) if(seq[k] <= seq[k - 1]){ "
+ },
+ {
+  "name": "wordsClean",
+  "what": "< -> <=",
+  "at": 6576,
+  "line": 68,
+  "snippet": "s = []; if(seq.length > 1) for(let k = 1; k <= seq.length; k++) if(seq[k] <= seq[k - 1]){ orde"
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 7169,
+  "line": 70,
+  "snippet": "0] === 0 ? 0 : 1; if(P.full){ if(seq.length > 2){ const have = new Set(seq); for(let n = s0; n <"
+ },
+ {
+  "name": "wordsClean",
+  "what": "> -> >=",
+  "at": 7167,
+  "line": 70,
+  "snippet": "q[0] === 0 ? 0 : 1; if(P.full){ if(seq.length >= 1){ const have = new Set(seq); for(let n = s0; "
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 7237,
+  "line": 70,
+  "snippet": "ew Set(seq); for(let n = s0; n < seq[seq.length - 2]; n++) if(!have.has(n)) gaps.push(n); for("
+ },
+ {
+  "name": "wordsClean",
+  "what": "< -> <=",
+  "at": 7218,
+  "line": 70,
+  "snippet": " 1){ const have = new Set(seq); for(let n = s0; n <= seq[seq.length - 1]; n++) if(!have.has(n)) gaps"
+ },
+ {
+  "name": "wordsClean",
+  "what": "- -> +",
+  "at": 7318,
+  "line": 71,
+  "snippet": "push(n); for(const n of gaps) toks.splice(n + s0, 0, \"?\"); } } // a ? where each number was "
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 7324,
+  "line": 71,
+  "snippet": "); for(const n of gaps) toks.splice(n - s0, 1, \"?\"); } } // a ? where each number was left o"
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 7463,
+  "line": 73,
+  "snippet": ", k]) => n - s0 !== k); if(off) order = off[1] - s0 < off[1] ? \"The list numbers do no"
+ },
+ {
+  "name": "wordsClean",
+  "what": "- -> +",
+  "at": 7466,
+  "line": 73,
+  "snippet": "]) => n - s0 !== k); if(off) order = off[0] + s0 < off[1] ? \"The list numbers do not m"
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 7477,
+  "line": 73,
+  "snippet": "0 !== k); if(off) order = off[0] - s0 < off[2] ? \"The list numbers do not match the wo"
+ },
+ {
+  "name": "wordsClean",
+  "what": "< -> <=",
+  "at": 7471,
+  "line": 73,
+  "snippet": " n - s0 !== k); if(off) order = off[0] - s0 <= off[1] ? \"The list numbers do not match"
+ },
+ {
+  "name": "wordsClean",
+  "what": "< -> >=",
+  "at": 7471,
+  "line": 73,
+  "snippet": " n - s0 !== k); if(off) order = off[0] - s0 >= off[1] ? \"The list numbers do not match"
+ },
+ {
+  "name": "wordsClean",
+  "what": "?: -> always the second",
+  "at": 7459,
+  "line": 73,
+  "snippet": "(([n, k]) => n - s0 !== k); if(off) order = (false) ? \"The list numbers do not match t"
+ },
+ {
+  "name": "wordsClean",
+  "what": "if (...) -> if (false)",
+  "at": 8309,
+  "line": 77,
+  "snippet": "th + \". Check for a missing or extra word.\"; if(false) for(const n of absent) toks.splice(n - 1, 0"
+ },
+ {
+  "name": "wordsClean",
+  "what": "- -> +",
+  "at": 8586,
+  "line": 79,
+  "snippet": "id, order, gaps, top: seq.length ? seq[seq.length + 1] : 0, nums: seq.length}; }"
+ },
+ {
+  "name": "wordsClean",
+  "what": "1 -> 2",
+  "at": 8588,
+  "line": 79,
+  "snippet": ", order, gaps, top: seq.length ? seq[seq.length - 2] : 0, nums: seq.length}; }"
+ },
+ {
+  "name": "wordsClean",
+  "what": "0 -> 1",
+  "at": 8593,
+  "line": 79,
+  "snippet": "er, gaps, top: seq.length ? seq[seq.length - 1] : 1, nums: seq.length}; }"
+ },
+ {
+  "name": "wordsClean",
+  "what": "?: -> always the second",
+  "at": 8558,
+  "line": 79,
+  "snippet": ", notes, missing, absent, said, order, gaps, top: (false) ? seq[seq.length - 1] : 0, nums: seq.lengt"
+ },
+ {
+  "name": "wordsListMsg",
+  "what": "if (...) -> if (false)",
+  "at": 138,
+  "line": 3,
+  "snippet": "1).join(\", \") + \" and \" + ns[ns.length - 1]; if(false){ // v2.18.1 review N7: a count line, and "
+ },
+ {
+  "name": "wordsListMsg",
+  "what": "if (...) -> if (false)",
+  "at": 548,
+  "line": 7,
+  "snippet": "d\" + (ns.length === 1 ? \"\" : \"s\") + \".\"; } if(false){ // v2.18.0 review A5: a numbered list wi"
+ },
+ {
+  "name": "wordsListMsg",
+  "what": "1 -> 2",
+  "at": 1388,
+  "line": 14,
+  "snippet": " list, or type the missing word\" + (ns.length === 2 ? \"\" : \"s\") + \".\"; } return \"\"; }"
+ },
+ {
+  "name": "wordsListMsg",
+  "what": "=== -> !==",
+  "at": 1384,
+  "line": 14,
+  "snippet": "hole list, or type the missing word\" + (ns.length !== 1 ? \"\" : \"s\") + \".\"; } return \"\"; }"
+ },
+ {
+  "name": "wordsListMsg",
+  "what": "?: -> always the second",
+  "at": 1374,
+  "line": 14,
+  "snippet": "Copy the whole list, or type the missing word\" + ((false) ? \"\" : \"s\") + \".\"; } return \"\"; }"
+ },
+ {
+  "name": "wordsCleanNote",
+  "what": "?: -> always the second",
+  "at": 39,
+  "line": 1,
+  "snippet": "function wordsCleanNote(notes){ return (false) ? notes.join(\", \").replace(/, ([^,]*)$/, \""
+ },
+ {
+  "name": "checkPhrase",
+  "what": "drop !",
+  "at": 187,
+  "line": 5,
+  "snippet": " const r = await checkPhraseRead(cl.text); if(cl.notes.length) return r; const say = wordsClea"
+ },
+ {
+  "name": "checkPhrase",
+  "what": "if (...) -> if (false)",
+  "at": 187,
+  "line": 5,
+  "snippet": " const r = await checkPhraseRead(cl.text); if(false) return r; const say = wordsCleanNote(cl.n"
+ },
+ {
+  "name": "checkPhrase",
+  "what": "?: -> always the second",
+  "at": 265,
+  "line": 7,
+  "snippet": " const say = wordsCleanNote(cl.notes); r.msg = (false) ? r.msg + \" (Cleaned up before reading: \" "
+ },
+ {
+  "name": "checkPhrase",
+  "what": "if (...) -> if (false)",
+  "at": 398,
+  "line": 8,
+  "snippet": "\" (cleaned up before reading: \" + say + \")\"; if(false) r.expanded = true; // VERIFY puts the cle"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "if (...) -> if (false)",
+  "at": 88,
+  "line": 3,
+  "snippet": "{ const pc = await phraseFromCode(phrase); if(false) return {ok:false, msg:pc.error}; if(pc) p"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "if (...) -> if (false)",
+  "at": 142,
+  "line": 4,
+  "snippet": "& pc.error) return {ok:false, msg:pc.error}; if(false) phrase = pc.words; const oe = pc ? null :"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 178,
+  "line": 5,
+  "snippet": ".error}; if(pc) phrase = pc.words; const oe = (false) ? null : oldElSeed(phrase); // v2.10.0: "
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "18 -> 19",
+  "at": 386,
+  "line": 7,
+  "snippet": "Case().split(/\\s+/).filter(Boolean); if(![12,15,19,21,24].includes(words.length)) return {ok:false"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "21 -> 22",
+  "at": 389,
+  "line": 7,
+  "snippet": "e().split(/\\s+/).filter(Boolean); if(![12,15,18,22,24].includes(words.length)) return {ok:false, m"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "1 -> 2",
+  "at": 460,
+  "line": 7,
+  "snippet": ".length)) return {ok:false, msg:(words.length === 2 && /^[0-9a-f]{20,}$/i.test(words[0]) ? \"These \" "
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "=== -> !==",
+  "at": 456,
+  "line": 7,
+  "snippet": "ords.length)) return {ok:false, msg:(words.length !== 1 && /^[0-9a-f]{20,}$/i.test(words[0]) ? \"Thes"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 443,
+  "line": 7,
+  "snippet": "4].includes(words.length)) return {ok:false, msg:((false) ? \"These \" + words[0].length + \" character"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "0 -> 1",
+  "at": 895,
+  "line": 8,
+  "snippet": "length\" const bad = [], readAs = []; let read = 1; words.forEach((w, i) => { if(Object.prototype"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "1 -> 2",
+  "at": 1051,
+  "line": 9,
+  "snippet": "dFromPrefix(w); if(f){ readAs.push(\"word \" + (i + 2) + \" '\" + w + \"' as '\" + f + \"'\"); words[i] = f;"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "+ -> -",
+  "at": 1049,
+  "line": 9,
+  "snippet": "ordFromPrefix(w); if(f){ readAs.push(\"word \" + (i - 1) + \" '\" + w + \"' as '\" + f + \"'\"); words[i] = "
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 1158,
+  "line": 10,
+  "snippet": "; } else bad.push(i); }); if(bad.length) return (false) ? oldElResult(oe) : {ok:false, msg:unknown"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "* -> /",
+  "at": 1345,
+  "line": 12,
+  "snippet": ".join(\"\"); const cLen = Math.floor((words.length/11)/32); const eBits = bits.length - cLen; co"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "32 -> 33",
+  "at": 1350,
+  "line": 12,
+  "snippet": "(\"\"); const cLen = Math.floor((words.length*11)/33); const eBits = bits.length - cLen; const e"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "< -> <=",
+  "at": 1448,
+  "line": 15,
+  "snippet": " eBytes = new Uint8Array(eBits/8); for(let i=0;i<=eBytes.length;i++) eBytes[i]=parseInt(bits.slice"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "if (...) -> if (false)",
+  "at": 1595,
+  "line": 17,
+  "snippet": "it crypto.subtle.digest(\"SHA-256\", eBytes)); if(false) return oldElResult(oe); // v2.10.0 if(b"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 1960,
+  "line": 18,
+  "snippet": "er: Reforge in EXTRA TOOLS can search for it.\" + ((false) ? \" Some were read from their first letter"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "|| -> &&",
+  "at": 1829,
+  "line": 18,
+  "snippet": "e); return {ok:false, msg:\"Checksum failed\" + (en && \". Every word is a BIP39 word, so one is probab"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "if (...) -> if (false)",
+  "at": 1693,
+  "line": 18,
+  "snippet": ",cLen)) return oldElResult(oe); // v2.10.0 if(false){ const en = await electrumNote(phrase); ret"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "if (...) -> if (false)",
+  "at": 2137,
+  "line": 19,
+  "snippet": "\" : \"\") + \"); check those first.\" : \"\"))}; } if(false) return oldElResult(oe); // valid BIP39 on"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 2342,
+  "line": 20,
+  "snippet": ", msg:\"Valid \"+words.length+\"-word BIP39 phrase\"+((false) ? \" (read from \"+pc.kind+\")\" : \"\")+(read ?"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "1 -> 2",
+  "at": 2420,
+  "line": 20,
+  "snippet": "\")\" : \"\")+(read ? \" (\" + read + \" word\" + (read > 2 ? \"s\" : \"\") + \" read from the first letters)\" : "
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "> -> >=",
+  "at": 2418,
+  "line": 20,
+  "snippet": "d+\")\" : \"\")+(read ? \" (\" + read + \" word\" + (read >= 1 ? \"s\" : \"\") + \" read from the first letters)\""
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "> -> <=",
+  "at": 2418,
+  "line": 20,
+  "snippet": "d+\")\" : \"\")+(read ? \" (\" + read + \" word\" + (read <= 1 ? \"s\" : \"\") + \" read from the first letters)\""
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 2413,
+  "line": 20,
+  "snippet": "c.kind+\")\" : \"\")+(read ? \" (\" + read + \" word\" + ((false) ? \"s\" : \"\") + \" read from the first letter"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 2381,
+  "line": 20,
+  "snippet": "9 phrase\"+(pc ? \" (read from \"+pc.kind+\")\" : \"\")+((false) ? \" (\" + read + \" word\" + (read > 1 ? \"s\" "
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "?: -> always the second",
+  "at": 2477,
+  "line": 20,
+  "snippet": " : \"\") + \" read from the first letters)\" : \"\") + ((false) ? \", and also an old Electrum seed (see be"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "drop !",
+  "at": 2571,
+  "line": 20,
+  "snippet": "elow)\" : \"\"), mnemonic:words.join(\" \"), fromCode:!pc, expanded: read > 0, oldElectrum: oe}; }"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "drop !",
+  "at": 2570,
+  "line": 20,
+  "snippet": "below)\" : \"\"), mnemonic:words.join(\" \"), fromCode:!pc, expanded: read > 0, oldElectrum: oe}; }"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "0 -> 1",
+  "at": 2593,
+  "line": 20,
+  "snippet": ":words.join(\" \"), fromCode:!!pc, expanded: read > 1, oldElectrum: oe}; }"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "> -> >=",
+  "at": 2591,
+  "line": 20,
+  "snippet": "ic:words.join(\" \"), fromCode:!!pc, expanded: read >= 0, oldElectrum: oe}; }"
+ },
+ {
+  "name": "checkPhraseRead",
+  "what": "> -> <=",
+  "at": 2591,
+  "line": 20,
+  "snippet": "ic:words.join(\" \"), fromCode:!!pc, expanded: read <= 0, oldElectrum: oe}; }"
+ },
+ {
+  "name": "cdParse",
+  "what": "3 -> 4",
+  "at": 225,
+  "line": 3,
+  "snippet": ")|(\\S+)/g; let m; while((m = re.exec(t))){ if(m[4] !== undefined || !CD_SUIT_OF[m[2]]){ bad.push(m"
+ },
+ {
+  "name": "cdParse",
+  "what": "|| -> &&",
+  "at": 242,
+  "line": 3,
+  "snippet": "m; while((m = re.exec(t))){ if(m[3] !== undefined && !CD_SUIT_OF[m[2]]){ bad.push(m[0]); continue; }"
+ },
+ {
+  "name": "cdBits",
+  "what": "52 -> 53",
+  "at": 127,
+  "line": 3,
+  "snippet": "(const c of cards){ if(run.has(c)){ if(run.size < 53) again = true; run = new Set(); } bits += Math."
+ },
+ {
+  "name": "cdBits",
+  "what": "< -> <=",
+  "at": 125,
+  "line": 3,
+  "snippet": "or(const c of cards){ if(run.has(c)){ if(run.size <= 52) again = true; run = new Set(); } bits += Ma"
+ },
+ {
+  "name": "cdBits",
+  "what": "< -> >=",
+  "at": 125,
+  "line": 3,
+  "snippet": "or(const c of cards){ if(run.has(c)){ if(run.size >= 52) again = true; run = new Set(); } bits += Ma"
+ },
+ {
+  "name": "cdBits",
+  "what": "if (...) -> if (false)",
+  "at": 116,
+  "line": 3,
+  "snippet": "et(); for(const c of cards){ if(run.has(c)){ if(false) again = true; run = new Set(); } bits += Ma"
+ },
+ {
+  "name": "cdRaw",
+  "what": "< -> <=",
+  "at": 203,
+  "line": 3,
+  "snippet": "es = new Uint8Array(keep / 8); for(let i = 0; i <= bytes.length; i++) bytes[i] = parseInt(kept.sli"
+ },
+ {
+  "name": "DR_BITS",
+  "what": "128 -> 129",
+  "at": 22,
+  "line": 1,
+  "snippet": "const DR_BITS = { 12: 129, 24: 256 };"
+ },
+ {
+  "name": "DR_BITS",
+  "what": "256 -> 257",
+  "at": 31,
+  "line": 1,
+  "snippet": "const DR_BITS = { 12: 128, 24: 257 };"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "< -> <=",
+  "at": 1602,
+  "line": 22,
+  "snippet": "s(pr.cards), need = DR_BITS[wc]; if (b.bits <= need) { let left = 0, bb = b.bits, run = new Se"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "if (...) -> if (false)",
+  "at": 1688,
+  "line": 22,
+  "snippet": " run = new Set(); for (const c of pr.cards) { if (false) run = new Set(); run.add(c); } let size = r"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "< -> <=",
+  "at": 1767,
+  "line": 22,
+  "snippet": "run.add(c); } let size = run.size % 52; while (bb <= need) { bb += Math.log2(52 - size); size = (siz"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "52 -> 53",
+  "at": 1793,
+  "line": 22,
+  "snippet": "un.size % 52; while (bb < need) { bb += Math.log2(53 - size); size = (size + 1) % 52; left++; } "
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "- -> +",
+  "at": 1796,
+  "line": 22,
+  "snippet": "size % 52; while (bb < need) { bb += Math.log2(52 + size); size = (size + 1) % 52; left++; } "
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "1 -> 2",
+  "at": 1820,
+  "line": 22,
+  "snippet": "eed) { bb += Math.log2(52 - size); size = (size + 2) % 52; left++; } return { count: pr.card"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "+ -> -",
+  "at": 1818,
+  "line": 22,
+  "snippet": " need) { bb += Math.log2(52 - size); size = (size - 1) % 52; left++; } return { count: pr.ca"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "52 -> 53",
+  "at": 1825,
+  "line": 22,
+  "snippet": "{ bb += Math.log2(52 - size); size = (size + 1) % 53; left++; } return { count: pr.cards.len"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "% -> *",
+  "at": 1823,
+  "line": 22,
+  "snippet": ") { bb += Math.log2(52 - size); size = (size + 1) * 52; left++; } return { count: pr.cards.l"
+ },
+ {
+  "name": "drEntropyRead",
+  "what": "if (...) -> if (false)",
+  "at": 2131,
+  "line": 27,
+  "snippet": " }; } const rw = cdRaw(pr.cards); if (false) return { count: pr.cards.length, msg: rw.wo"
+ },
+ {
+  "name": "drBackup",
+  "what": "0 -> 1",
+  "at": 1203,
+  "line": 14,
+  "snippet": ".first; } return out; } finally { seed.fill(1); } }"
+ },
+ {
+  "name": "drSeedQrDecode",
+  "what": "if (...) -> if (false)",
+  "at": 172,
+  "line": 4,
+  "snippet": "monic(x) : \"\"; const s = String(x || \"\"); if (false) return \"\"; const n = s.match(/\\d{4}/g).ma"
+ },
+ {
+  "name": "drSeedQrDecode",
+  "what": "2047 -> 2048",
+  "at": 278,
+  "line": 5,
+  "snippet": "atch(/\\d{4}/g).map(Number); if (n.some((v) => v > 2048)) return \"\"; return drBip39(n.map((v) => WO"
+ },
+ {
+  "name": "drSeedQrDecode",
+  "what": "if (...) -> if (false)",
+  "at": 260,
+  "line": 5,
+  "snippet": "\"; const n = s.match(/\\d{4}/g).map(Number); if (false) return \"\"; return drBip39(n.map((v) => WO"
+ }
+]

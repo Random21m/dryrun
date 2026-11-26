@@ -1,0 +1,57 @@
+
+    <details id="ssBox">
+      <summary>Turn the practice device on or off<small>A copy of SeedSigner 0.8.7: the same screens, menus and buttons. Closing this switches it off and wipes it.</small></summary>
+      <div class="ss-wrap">
+        <div class="ss-dev" id="ssDevice" tabindex="0" role="application" aria-label="Practice signer. While it has focus: arrow keys move, Enter or Space presses the joystick, 1, 2 and 3 are KEY1, KEY2 and KEY3.">
+          <button type="button" class="ss-k" id="ssKUp" tabindex="-1" aria-label="Joystick up"></button>
+          <button type="button" class="ss-k" id="ssKLeft" tabindex="-1" aria-label="Joystick left"></button>
+          <button type="button" class="ss-k" id="ssKPress" tabindex="-1" aria-label="Joystick press"></button>
+          <button type="button" class="ss-k" id="ssKRight" tabindex="-1" aria-label="Joystick right"></button>
+          <button type="button" class="ss-k" id="ssKDown" tabindex="-1" aria-label="Joystick down"></button>
+          <div class="ss-bezel"><canvas id="ssScreen" width="320" height="240" aria-label="Practice signer screen"></canvas></div>
+          <button type="button" class="ss-k" id="ssK1" tabindex="-1" aria-label="KEY1"></button>
+          <button type="button" class="ss-k" id="ssK2" tabindex="-1" aria-label="KEY2"></button>
+          <button type="button" class="ss-k" id="ssK3" tabindex="-1" aria-label="KEY3"></button>
+        </div>
+      </div>
+      <p class="hint">Click the buttons on the case, or click the device and use the keyboard: arrow keys move, Enter or Space presses the joystick, 1, 2 and 3 are KEY1, KEY2 and KEY3. It runs inside this page only. CLEAR ALL or closing it wipes it.</p>
+      <div class="ss-learn" id="ssLearn">
+        <h3 class="sec">Lessons</h3>
+        <p class="hint" style="margin:0 0 8px;">Short lessons that walk you through the device, one press at a time. Each step moves on by itself when the device shows the right screen. They work with the seed loaded on the device, real or practice; with none loaded, they load the public test seed abandon ... about (anyone can make it, so never put coins on it). Their practice transactions spend made-up coins, so they can never be broadcast.</p>
+        <div class="btn-row"><select id="ssLearnPick" aria-label="Lesson"></select><button type="button" id="ssLearnGo" class="secondary small">START LESSON</button></div>
+        <div class="ss-l-run" id="ssLearnRun" hidden>
+          <p><b id="ssLearnName"></b> &middot; <span id="ssLearnCount"></span></p>
+          <p class="hint" id="ssLearnNote"></p>
+          <p class="ss-l-do" id="ssLearnDo"></p>
+          <p class="hint" id="ssLearnSee"></p>
+          <p class="status ok" id="ssLearnState" aria-live="polite"></p>
+          <div class="btn-row" style="margin:6px 0 0;"><button type="button" class="secondary small" id="ssLearnBack">BACK</button><button type="button" class="secondary small" id="ssLearnNext">NEXT</button><button type="button" class="secondary small" id="ssLearnRestart">RESTART LESSON</button></div>
+        </div>
+        <div class="ss-l-cam" id="ssLearnCam" hidden><span>Held up to the device&rsquo;s camera: <b id="ssLearnCamWhat"></b>. <span id="ssLearnCamSay" aria-live="polite"></span></span><button type="button" class="secondary small" id="ssLearnCamOff">PUT IT AWAY</button></div>
+        <p class="status" id="ssLoadStatus" aria-live="polite"></p>
+        <p class="status" id="ssCamNote" aria-live="polite"></p>
+        <h3 class="sec">Practice transaction</h3>
+        <p class="hint" style="margin:0 0 8px;">Makes a PSBT that spends made-up coins of the seed on the device and holds it up to the device&rsquo;s camera. After you sign it, this page reads the signed PSBT from the device&rsquo;s screen and checks every signature with its own code.</p>
+        <div class="btn-row"><select id="ssTxKind" aria-label="Kind of practice transaction"><option value="single">Single key: 2 inputs</option><option value="multi">2-of-3 multisig: 1 input</option></select><button type="button" id="ssTxGo" class="secondary small">PRACTICE TRANSACTION</button></div>
+        <p class="ms-test" id="ssTxNet" hidden>Mainnet: these coins don&rsquo;t exist; this PSBT can never be broadcast.</p>
+        <p class="status" id="ssTxStatus" aria-live="polite"></p>
+        <p class="hint" id="ssTxCoins"></p>
+        <div class="ss-own" id="ssOwnBox">
+        <h3 class="sec">Use it for real: your own PSBT, address, wallet or message</h3>
+        <p class="ms-test">A browser is not a hardware signer. This device signs for real, inside this page: a real SeedSigner keeps the seed off every computer, and this does not. With real coins, use it only on an offline computer you trust, check every address and amount on its screen against what you meant to send, and wipe the seed afterwards (CLEAR ALL).</p>
+        <p class="hint" style="margin:0 0 8px;">Paste a PSBT from your wallet (Sparrow, Electrum, Nunchuk, Specter, Bitcoin Core: base64, hex, or the parts of an animated UR or BBQr QR, one per line), an address to verify, a multisig wallet descriptor (sortedmulti), or a signmessage request; or choose a .psbt file, or scan a QR with this computer&rsquo;s camera. HOLD UP TO THE DEVICE shows it to the device&rsquo;s camera; then choose Scan on the device. The device reviews it and signs as SeedSigner does, and the signed PSBT comes back here too, byte for byte as in its QR code.</p>
+        <textarea id="ssOwnIn" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your PSBT, address, wallet descriptor or signmessage request" placeholder="PSBT (cHNidP8... or 70736274ff...), address, wallet descriptor or signmessage request"></textarea>
+        <div class="btn-row"><button type="button" id="ssOwnGo">HOLD UP TO THE DEVICE</button><button type="button" class="secondary small" id="ssOwnFileBtn">CHOOSE .PSBT FILE</button><input type="file" id="ssOwnFile" accept=".psbt,.txt,application/octet-stream" hidden><button type="button" class="secondary small" id="ssOwnClear">CLEAR</button></div>
+        <p class="status" id="ssOwnStatus" aria-live="polite"></p>
+        <ul class="ss-own-w" id="ssOwnWarns" hidden></ul>
+        <p class="hint" style="margin:10px 0 6px;"><b>Sign a message.</b> Signed with the key of one of the seed&rsquo;s single-key receive addresses, in the Bitcoin Signed Message format SeedSigner uses. Turn on Message signing on the device first (Settings &gt; Advanced).</p>
+        <textarea id="ssMsgIn" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Message to sign" placeholder="Message to sign (plain letters, digits and punctuation)"></textarea>
+        <div class="btn-row"><select id="ssMsgType" aria-label="Address type of the signing key"><option value="84">Native SegWit (bc1q)</option><option value="49">Nested SegWit (3...)</option><option value="44">Legacy (1...)</option></select><input type="number" id="ssMsgIdx" min="0" max="999999" step="1" value="0" aria-label="Receive address number"><button type="button" class="secondary small" id="ssMsgGo">HOLD UP THE MESSAGE</button></div>
+        <div id="ssOwnOut" hidden>
+          <p class="status" id="ssOwnOutSay" aria-live="polite"></p>
+          <textarea id="ssOwnOutText" rows="4" readonly spellcheck="false" aria-label="What the device made: the signed PSBT (base64) or the signed message"></textarea>
+          <div class="btn-row"><button type="button" class="secondary small" id="ssOwnCopy">COPY</button><button type="button" class="secondary small" id="ssOwnCopySig" hidden>COPY SIGNATURE ONLY</button><button type="button" class="secondary small" id="ssOwnSave">SAVE .PSBT FILE</button></div>
+        </div>
+        </div>
+      </div>
+    </details>

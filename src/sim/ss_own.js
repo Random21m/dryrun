@@ -531,25 +531,11 @@ async function ssOwnSignGate(kind, seed, psbt, network, ctx = {}) {
   if (ssOwnSeedPublic(seed)) return null;          // a public seed: PRACTICE, nothing to lose
   if (kind === "psbt" && ssOwnIsPracticeTx(psbt)) return null;   // the practice transaction spends made-up coins
   if (kind === "msg" && ctx.message === SS_LEARN_MSG) return null;   // the message lesson's practice message
-  const online = navigator.onLine === true;
-  if (!confirm(kind === "psbt" ? SS_OWN_ASK_PSBT(fp, online) : SS_OWN_ASK_MSG(fp, online))) {
-    if (kind === "msg") { try { const c = SSController._instance; c.sign_message_data = null; c.resume_main_flow = null; } catch (e) { /* no device */ } }
-    return ssOwnBlock("Not signed", "You chose not to sign. Nothing was signed.", "Not signed: you chose not to sign with seed " + fp + ". Nothing was signed.", kind === "msg");
-  }
-  if (kind === "psbt") {   // multisig change the device did not verify against a wallet descriptor of this seed: a second question
-    const parser = ctx.parser;
-    let left = [];
-    try {
-      if (parser && parser.is_multisig && parser.change_data.length) {
-        const tr = await ssOwnMsigTrust(psbt, seed, network, ctx.desc && Array.isArray(ctx.desc.keys) ? ctx.desc : null);
-        if (!tr.trusted) left = parser.change_data;
-        else for (const c of parser.change_data) { let ok = false; try { ok = await tr.desc.owns(psbt.outputs[c.output_index]); } catch (e) { ok = false; } if (!ok) left.push(c); }   // (the device has refused such change before this point)
-      }
-    } catch (e) { left = parser ? parser.change_data : []; }
-    if (left.length && !confirm(SS_OWN_ASK_CHANGE(left)))
-      return ssOwnBlock("Not signed", "You chose not to sign: the change was not verified. Nothing was signed.", "Not signed: you chose not to sign while the device had not verified the multisig change (" + ssOwnSats(left.reduce((a, x) => a + x.amount, 0)) + "). Nothing was signed.");
-  }
-  return null;
+  // DRYRUN 1.1.0: practice only. A seed that is not public signs nothing but DRYRUN's own practice transaction and the lesson's
+  // practice message: never a PSBT or message of a real wallet (one held up to this computer's camera, say), whatever the answer.
+  if (kind === "msg") { try { const c = SSController._instance; c.sign_message_data = null; c.resume_main_flow = null; } catch (e) { /* no device */ } }
+  return ssOwnBlock("Not signed", "DRYRUN is for practice only: it signs only its own practice transactions.",
+    "Not signed: DRYRUN is for practice only. Seed " + fp + " signs only DRYRUN's practice transactions and its practice message, never a " + (kind === "psbt" ? "PSBT" : "message") + " of a real wallet.", kind === "msg");
 }
 
 // ---------------------------------------------------------------- what the device made, taken back

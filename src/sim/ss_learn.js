@@ -139,7 +139,7 @@ function ssLearnShow(frames, what, key) {
   // LOAD INTO THE PRACTICE SIGNER stops when its SeedQR is put away before the device read it, or another QR is held up
   // (v2.16.1 second review: "read" is the load's own ssAuto.read; the scan's put-away has already reset ssLearnCam.read)
   if (ssAuto.on && (frames ? key !== "seedload" : !ssAuto.read)) ssAutoEnd(frames ? "Not loaded: another QR code is held up to the device." : "Not loaded: the SeedQR was put away before the device read it.", "bad");
-  if (ssLearnCam.key === "seedload") ssLearnForget();   // a seed's SeedQR is wiped as soon as it is put away
+  if (ssLearnCam.key === "seedload" || ssLearnCam.key === "myseedqr") ssLearnForget();   // a seed's SeedQR is wiped as soon as it is put away
   ssLearnCam.say = ""; ssLearnCam.read = false;
   // a scan seen earlier says nothing about these QR codes: without this, a decoder kept from an earlier scan (the timer stops when
   // the QR is put away, before ssLearnTick sees the scan end) put the next QR away on the first tick (a second Damascus seed)
@@ -169,7 +169,9 @@ async function ssLearnAddress(n, branch, index) {   // native SegWit address of 
 async function ssLearnFeed(kind) {   // [frames, what the panel says the practice wallet shows]
   const n = ssLearnNet();
   if (kind === "seedqr") return [[SS_LEARN_ABANDON.split(" ").map((w) => String(WORDLIST.indexOf(w)).padStart(4, "0")).join("")], "the SeedQR of the public test seed abandon ... about"];
-  if (kind === "myseedqr") { const sd = ssLearnSeed(), m = sd ? sd.mnemonic_str : SS_LEARN_ABANDON; return [[m.split(" ").map((w) => String(WORDLIST.indexOf(w)).padStart(4, "0")).join("")], "your drawn SeedQR (here, a perfect copy of seed " + ssLearnT("{fp}") + ")"]; }
+  if (kind === "myseedqr") { let sd = null; try { const c = SSController._instance, a = c && c.current_destination && c.current_destination.view_args; sd = a && Number.isInteger(+a.seed_num) ? ssLearnSeeds()[+a.seed_num] : null; } catch (e) { sd = null; }
+    sd = sd || ssLearnSeed(); const m = sd ? sd.mnemonic_str : SS_LEARN_ABANDON;   // the seed being transcribed (review: not just the newest)
+    return [[m.split(" ").map((w) => String(WORDLIST.indexOf(w)).padStart(4, "0")).join("")], "your drawn SeedQR (here, a perfect copy of seed " + ssLearnT("{fp}") + ")"]; }
   if (kind === "address") { const a = await ssLearnAddress(n, 0, 3); return [["bitcoin:" + a], "receive address #3 of " + (ssLearnSeed() ? "seed " + ssLearnT("{fp}") : "the public test seed") + ": " + a]; }
   if (kind === "signmsg") return [["signmessage m/84h/" + ssLearnCoin(n) + "h/0h/0/0 ascii:" + SS_LEARN_MSG], "a request to sign the message \"" + SS_LEARN_MSG + "\""];
   if (kind === "descriptor") { const t = ssLearn.tx && ssLearn.tx.descriptor; return t ? [[t], "the 2-of-3 wallet descriptor"] : [null, ""]; }
@@ -254,7 +256,7 @@ async function ssLearnBuild(kind) {
     toSelf = { script: await ssLearnP2wpkh(spub), map: [[Uint8Array.of(0x02, ...spub), ssLearnPath(A.fp, [84 + SS_LEARN_H, coin + SS_LEARN_H, SS_LEARN_H, 0, 5])]] };
     outs = [{ amount: payAmt, script: toSelf.script }, { amount: chg, script: change.script }]; outMaps = [toSelf.map, change.map];
   } else if (kind === "stranger") {
-    const st = await ssLearnAcct(await mnemonicToSeed(SS_LEARN_TEST.C, ""), "wpkh", n);
+    const st = await ssLearnAcct(await mnemonicToSeed([SS_LEARN_TEST.C, SS_LEARN_TEST.B].find((m) => m !== sp.mnemonic), ""), "wpkh", n);   // never the spender's own seed
     stranger = { amount: chg, script: await ssLearnP2wpkh(await ssLearnChild(st, 0, 0)) };
     outs = [{ amount: payAmt, script: payScript }, { amount: stranger.amount, script: stranger.script }]; outMaps = [[], []]; chg = 0n;
   } else { outs = [{ amount: payAmt, script: payScript }, { amount: chg, script: change.script }]; outMaps = [[], change.map]; }
@@ -269,7 +271,7 @@ async function ssLearnBuild(kind) {
   }
   const tx = { kind, net: n, own: sp.own, real: !!sp.real, fp: A.fp, global, inMaps, outMaps, utx, descriptor,
     prevTxid: hex(prevHash.slice().reverse()), inSum, payAmt, fee, chg, payAddr: bech32Encode(ssLearnHrp(n), 0, (toSelf ? toSelf.script : payScript).slice(2)), nIn: coins.length, result: null,
-    strangerAmt: stranger ? stranger.amount : 0n, strangerAddr: stranger ? bech32Encode(ssLearnHrp(n), 0, stranger.script.slice(2)) : "" };
+    strangerAmt: stranger ? stranger.amount : 0n };
   tx.psbt = ssLearnPsbt(tx);
   tx.frames = urEncode("crypto-psbt", CB.bytes(Array.from(tx.psbt)), 100);
   return tx;
@@ -317,6 +319,7 @@ async function ssLearnCheck(T, signed) {
   const good = res.ins.filter((x) => x.sv && x.sv.state === "valid" && x.sv.n >= 1).length;
   const ok = good === T.nIn && sigs === T.nIn;
   const tail = (T.kind === "multi" ? " This 2-of-3 wallet needs one more signature from a second cosigner." : "") + (T.real ? " The coins are made up, so this transaction can never be broadcast." : "");
+  if (ok && (T.kind === "stranger" || T.kind === "bigfee")) return { ok, bad: true, sigs, text: "You signed it, but this was the one NOT to sign: " + (T.kind === "stranger" ? "no change came back and a second recipient, an address that is not yours, got the rest of your coins (the device said Full Spend! and Will Send #2)." : "the fee was far larger than the payment (the device showed it on Review Transaction and Transaction Math).") + " With real coins they would be gone. The signatures are valid; that is exactly the danger." };
   return { ok, sigs, text: ok ? "Signed correctly" + (T.real ? " by your real seed " + T.fp + " (not a practice seed)" : "") + ": " + (sigs === 1 ? "the signature checks out" : "all " + sigs + " signatures check out") + " (checked by this page's own code, not the device's)." + tail
     : "NOT signed correctly: " + good + " of " + T.nIn + " input(s) have a valid signature." };
 }
@@ -420,7 +423,7 @@ const SS_LEARN_LESSONS = [
       { do: "That is the first warning sign: where did your change go? Press in (Continue).", see: "Transaction Math: no change at all.", at: ssLearnIs("SSPSBTMathView") },
       { do: "Press the joystick in (Review recipients).", see: "Will Send (#1): the payment you meant to make.", at: (s) => s.view === "SSPSBTAddressDetailsView" && +ssLearnArg(s, "address_num") === 0 },
       { do: "Press the joystick in (Next).", see: "Will Send (#2): the rest of your coins, to an address you do not know.", at: (s) => s.view === "SSPSBTAddressDetailsView" && +ssLearnArg(s, "address_num") === 1 },
-      { do: "Do NOT approve this. Go back: press the joystick left to select the back arrow at the top left, then press it in, until you see Home.", see: "Home. The transaction is not signed.", at: ssLearnIs("SSMainMenuView") },
+      { do: "Do NOT approve this. Go back: press the joystick left to select the back arrow at the top left, then press it in, until you see Home.", see: "Home. The transaction is not signed.", at: (s) => s.view === "SSMainMenuView" && !(ssLearn.tx && ssLearn.tx.result) },
     ] },
   // DRYRUN 1.1.0: the same words with a passphrase are a different wallet
   { id: "passphrase", name: "Add a passphrase (and see the fingerprint change)",
@@ -430,7 +433,7 @@ const SS_LEARN_LESSONS = [
       { feed: "seedqr", do: "Scan is selected: press the joystick in. The practice wallet holds up the SeedQR of the public test seed.", see: "Finalize Seed with the fingerprint " + SS_LEARN_FP + ", Done and BIP-39 Passphrase.", at: ssLearnIs("SSSeedFinalizeView") },
       { do: "Move down to BIP-39 Passphrase and press in.", see: "Add Passphrase, with a keyboard.", at: ssLearnIs("SSSeedAddPassphraseView") },
       { do: "Press the joystick in once: it types the letter on the selected key. Then press KEY3 (the lowest key on the right) to finish.", see: "Verify Passphrase: what you typed, and the new fingerprint.", at: ssLearnIs("SSSeedReviewPassphraseView") },
-      { do: "Compare: the fingerprint is not " + SS_LEARN_FP + " any more. Done is selected: press in (and press Done again if Finalize Seed comes back).", see: "A menu titled with the new fingerprint.", at: (s) => s.view === "SSSeedOptionsView" && !!s.title && s.title !== SS_LEARN_FP },
+      { do: "Compare: the fingerprint is not " + SS_LEARN_FP + " any more. Done is selected: press in (and press Done again if Finalize Seed comes back).", see: "A menu titled with the new fingerprint.", at: (s) => { if (s.view !== "SSSeedOptionsView" || !s.title || s.title === SS_LEARN_FP) return false; const x = ssLearnSeeds()[+ssLearnArg(s, "seed_num")]; return !!(x && x.passphrase); } },
     ] },
   { id: "multisig", name: "Set up and check a 2-of-3 multisig", txKind: "multi",
     note: "This lesson uses the seed on the device (the newest one loaded, fingerprint {fp}; with none loaded, it first loads the public test seed abandon ... about) and two public test seeds for the other cosigners. The coins are made up, so the transaction can never be broadcast.",
@@ -498,7 +501,7 @@ function ssLearnRender() {
   }
   ssLearnSetText("ssTxStatus", s);
   ssLearnSetText("ssTxCoins", T ? "The coins come from made-up transaction " + T.prevTxid.slice(0, 16) + "..., marked \"" + SS_LEARN_MARK + "\"." : "");
-  const ok = ssLearnEl("ssTxStatus"); if (ok) ok.className = "status" + (T && T.result ? (T.result.ok ? " ok" : " bad") : "");
+  const ok = ssLearnEl("ssTxStatus"); if (ok) ok.className = "status" + (T && T.result ? (T.result.ok && !T.result.bad ? " ok" : " bad") : "");
 }
 function ssLearnTimer() {
   const need = ssPageOn && ((ssLearn.lesson && !ssLearn.done) || (ssLearn.tx && !ssLearn.tx.result) || ssLearnCam.frames);

@@ -1480,13 +1480,40 @@ SCEN.practice_kinds = async (t, d, ctx, page) => {   // the practice wallet's "S
     if (kind === 'self') t(!seen.includes('SSPSBTAddressDetailsView') && seen.includes('SSPSBTChangeDetailsView'), tag + ': the device shows no recipient, only its own addresses (a self-transfer, as SeedSigner shows it) (' + [...new Set(seen)].join(', ') + ')');
     const u = await readUR(page); const signedB = u && u.bytes;
     if (signedB) checkSigs(t, tag, origB, signedB, ABANDON); else t(false, tag + ': no signed PSBT read from the screen');
-    t(await until(() => d.ev(() => !!(ssLearn.tx && ssLearn.tx.result && ssLearn.tx.result.ok)), 60000), tag + ': the page says Signed correctly');
+    if (kind === 'self') t(await until(() => d.ev(() => !!(ssLearn.tx && ssLearn.tx.result && ssLearn.tx.result.ok && !ssLearn.tx.result.bad)), 60000), tag + ': the page says Signed correctly');
+    else t(await until(() => d.ev(() => !!(ssLearn.tx && ssLearn.tx.result && ssLearn.tx.result.bad && /^You signed it, but this was the one NOT to sign/.test(document.getElementById('ssTxStatus').textContent) && /\bbad\b/.test(document.getElementById('ssTxStatus').className))), 60000), tag + ': signing it anyway gets a red "You signed it, but this was the one NOT to sign", not "Signed correctly" (review)');
     await toHomeAny(d);
   }
 };
+// review of 1.1.0: signing the stranger transaction anyway does not let the "spot" lesson end on "You did not sign"; and a seed that is
+// not public signs nothing that is not DRYRUN's practice transaction (a real wallet's PSBT held up to the computer's camera, say)
+SCEN.spot_signed = async (t, d, ctx, page) => {
+  await d.loadByScan(); await toHome(d);
+  await page.selectOption('#ssLearnPick', 'spot'); await page.click('#ssLearnGo'); await d.lessonTicks(2);
+  await page.selectOption('#ssTxKind', 'stranger'); await page.click('#ssTxGo'); await waitCam(d, 'tx');
+  await d.pick(/^Scan$/); await d.waitView('SSPSBTSelectSeedView'); await d.press('PRESS');
+  const ok = await signThrough(d); await readUR(page).catch(() => null);
+  await until(() => d.ev(() => !!(ssLearn.tx && ssLearn.tx.result)), 60000); await toHomeAny(d); await d.lessonTicks(3);
+  const p = await panel(d);
+  t(ok && !p.done && /one NOT to sign/.test(p.status), 'review: after signing the stranger transaction, the "spot" lesson does not say "You did not sign" (done: ' + p.done + ')');
+};
+SCEN.real_refused = async (t, d, ctx, page) => {
+  const REAL = diceWords('3141592653589793238', 12), R = rootOf(REAL);
+  await d.waitView('SSMainMenuView'); await page.evaluate(() => { window.__asked = 0; window.confirm = () => { window.__asked++; return true; }; });
+  // load a seed that is not public, from its SeedQR (offline: the device's online question does not come up)
+  await scanFrames(d, page, [REAL.split(' ').map((w) => String(wordlist.indexOf(w)).padStart(4, '0')).join('')]); await d.waitView('SSSeedFinalizeView'); await d.pick(/^Done$/); await toHome(d);
+  // a real wallet's PSBT (not DRYRUN's practice transaction) spending m/84'/0'/0'/0/0 of that seed
+  const k = R.derive("m/84'/0'/0'/0/0"), pay = btc.p2wpkh(k.publicKey), tx = new btc.Transaction();
+  tx.addInput({ txid: new Uint8Array(32).fill(7), index: 0, witnessUtxo: { script: pay.script, amount: 50000n }, bip32Derivation: [[k.publicKey, { fingerprint: R.fingerprint, path: btc.bip32Path("m/84'/0'/0'/0/0") }]] });
+  tx.addOutput({ script: btc.p2wpkh(rootOf(MN_PAY).derive("m/84'/0'/0'/0/0").publicKey).script, amount: 40000n });
+  await scanFrames(d, page, [Buffer.from(tx.toPSBT(0)).toString('base64')]); await d.waitView('SSPSBTSelectSeedView'); await d.press('PRESS');
+  const seen = []; for (let i = 0; i < 12; i++) { const s = await d.state(); seen.push(s.view); if (s.view === 'SSPSBTSignedQRDisplayView' || /Not signed/.test(s.title + ' ' + (s.headline || '')) || s.view === 'SSMainMenuView') break; await d.press('PRESS'); }
+  const sigs = await d.ev(() => { const c = SSController._instance; try { return c.psbt ? c.psbt.inputs.reduce((a, x) => a + ((x.partial_sigs && x.partial_sigs.size) || 0), 0) : 0; } catch (e) { return -1; } });
+  t(!seen.includes('SSPSBTSignedQRDisplayView') && sigs <= 0 && await page.evaluate(() => window.__asked) === 0, 'review: a real wallet\'s PSBT held up to the camera is NOT signed by a seed that is not public, and nothing asks "sign anyway?" (' + [...new Set(seen)].join(', ') + '; signatures ' + sigs + ')');
+};
 // ================================================================ run
 SCEN.tools.clock = true; SCEN.offline.online = true;
-const order = ['lessons_new', 'lessons_spot', 'practice_kinds', 'lessons_dice', 'lessons_tx', 'lessons_seed', 'practice_tx', 'phone', 'review', 'psbt_msig', 'psbt_wipe', 'psbt_p2wpkh', 'psbt_p2sh', 'psbt_p2tr', 'psbt_msig_bad', 'signmsg', 'addr_single', 'addr_taproot', 'addr_multi', 'dice12', 'dice24', 'words', 'settings', 'settings_wipe', 'seedqr', 'tools', 'native', 'nested', 'taproot', 'wipe', 'offline'];
+const order = ['lessons_new', 'lessons_spot', 'practice_kinds', 'spot_signed', 'real_refused', 'lessons_dice', 'lessons_tx', 'lessons_seed', 'practice_tx', 'phone', 'review', 'psbt_msig', 'psbt_wipe', 'psbt_p2wpkh', 'psbt_p2sh', 'psbt_p2tr', 'psbt_msig_bad', 'signmsg', 'addr_single', 'addr_taproot', 'addr_multi', 'dice12', 'dice24', 'words', 'settings', 'settings_wipe', 'seedqr', 'tools', 'native', 'nested', 'taproot', 'wipe', 'offline'];
 const want = process.env.SCEN ? process.env.SCEN.split(',') : order;
 const results = [];
 async function runScenario(browser, name) {

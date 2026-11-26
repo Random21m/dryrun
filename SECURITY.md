@@ -15,7 +15,7 @@ DRYRUN is an unofficial practice tool, not made by or connected to SeedSigner.
 ## Known limits (not vulnerabilities)
 
 - A browser is not a hardware signer. Anything typed into this page could be seen by malware, a browser extension or a screen recorder on the same computer. Use it offline, and never put money on a seed you made or typed here.
-- The practice device can sign your own PSBTs and messages (Use it for real). That is a real signature from a seed in a browser tab: read the warnings next to it.
+- The practice device signs only made-up practice transactions and messages. Since 1.1.0 there is no way to paste your own PSBT: DRYRUN is for practice only. Never load a seed that holds real coins.
 - The self-test runs inside the same file it checks, so a tampered file could fake a pass. Check the SHA-256 with a tool that is not the page (see below).
 - The secp256k1 code is not constant-time. That is acceptable offline only.
 

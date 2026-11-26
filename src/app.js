@@ -4,7 +4,7 @@
 // dice and coin flips use the simulator's port of SeedSigner's own code (ssGenerateMnemonicFromDice / ...FromCoinFlips).
 // Nothing here is stored: the only browser storage is the THEME choice.
 "use strict";
-const DR_VERSION = "1.0.2";
+const DR_VERSION = "1.1.0";
 const DR_BITS = { 12: 128, 24: 256 };
 const $d = (id) => document.getElementById(id);
 let drQueue = Promise.resolve();

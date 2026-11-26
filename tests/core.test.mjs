@@ -204,6 +204,7 @@ if (loaded) {
     ok(anchorsOk, 'links: every in-page link has its target');
     const text = await page.evaluate(() => document.body.innerText + ' ' + [...document.querySelectorAll('[title],[aria-label]')].map((e) => (e.title || '') + ' ' + (e.getAttribute('aria-label') || '')).join(' '));
     const gone = ['the original page', 'MAKE A SEED', 'CHECK A BACKUP', 'FORGE SEED', 'Damascus', 'Reforge', 'Wallet Detective', 'Seed XOR', 'SLIP39', 'END SESSION'].filter((x) => text.toUpperCase().includes(x.toUpperCase()));
+    ok(await page.evaluate(() => !document.getElementById('ssOwnIn') && !document.getElementById('ssOwnGo') && !/Use it for real/.test(document.body.innerText)), '1.1.0: there is no way to paste your own PSBT or sign for real (Use it for real is gone)');
     ok(await page.evaluate(() => typeof safeCopy === 'function' && typeof showCopied === 'function'), 'review: the device\'s COPY buttons have their copy function');
     ok(!gone.length, 'links: no text points to a the original page tool DRYRUN does not have (' + gone.join(', ') + ')');
     ok(/DRYRUN is an unofficial practice tool, not made by or connected to SeedSigner/.test(text), 'the unofficial note is shown');
@@ -231,6 +232,12 @@ if (loaded) {
     }
   });
 }
+{ const c2 = await browser.newContext({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true }); await c2.setOffline(true); const q = await c2.newPage();
+  try { await q.goto('file://' + FILE); await q.evaluate(() => window.selfTestDone);
+    for (const tab of ['check', 'print', 'guide']) { const m = await q.evaluate((tab) => { showTab(tab); return { sw: document.documentElement.scrollWidth, iw: innerWidth, small: [...document.querySelectorAll('button,select,input')].filter((e) => e.offsetParent && e.getBoundingClientRect().height < 40).map((e) => e.id || e.textContent) }; }, tab);
+      ok(m.sw <= m.iw && !m.small.length, 'phone (390 px): the ' + tab.toUpperCase() + ' tab does not scroll sideways and every button is at least 40 px tall (' + m.small.join(', ') + ')'); } }
+  catch (e) { ok(false, 'phone: ' + String(e.message).split('\n')[0]); }
+  await c2.close(); }
 ok(!requests.length, 'no network request of any kind (' + requests.slice(0, 3).join(' ') + ')');
 ok(!problems.length, 'no page error or console error (' + problems.slice(0, 3).join(' | ') + ')');
 await browser.close();

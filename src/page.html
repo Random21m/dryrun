@@ -75,6 +75,8 @@
   .qr-pair canvas { display: block; width: 180px; height: 180px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
   ol.steps { padding-left: 22px; } ol.steps li, ul.rules li { margin: 4px 0; }
   footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--dim); }
+  /* touch screens: every button and box at least 40 px tall, so a finger hits it */
+  @media (pointer: coarse) { button, select, input[type="text"] { min-height: 40px; } }
   #printArea { display: none; }
   @media print {
     @page { margin: 12mm; }
@@ -214,7 +216,7 @@
     </div>
   </section>
 
-  <footer><span id="drVersion">DRYRUN v1.0.2</span>. One HTML file, no network, no tracking. Unofficial; not made by or connected to SeedSigner.</footer>
+  <footer><span id="drVersion">DRYRUN v1.1.0</span>. One HTML file, no network, no tracking. Unofficial; not made by or connected to SeedSigner.</footer>
 </div>
 <div id="printArea" aria-hidden="true"></div>
 <!--SCRIPTS-->

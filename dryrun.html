@@ -75,6 +75,8 @@
   .qr-pair canvas { display: block; width: 180px; height: 180px; image-rendering: pixelated; background: #fff; border-radius: 4px; }
   ol.steps { padding-left: 22px; } ol.steps li, ul.rules li { margin: 4px 0; }
   footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; color: var(--dim); }
+  /* touch screens: every button and box at least 40 px tall, so a finger hits it */
+  @media (pointer: coarse) { button, select, input[type="text"] { min-height: 40px; } }
   #printArea { display: none; }
   @media print {
     @page { margin: 12mm; }
@@ -217,28 +219,11 @@
         <p class="status" id="ssLoadStatus" aria-live="polite"></p>
         <p class="status" id="ssCamNote" aria-live="polite"></p>
         <h3 class="sec">Practice transaction</h3>
-        <p class="hint" style="margin:0 0 8px;">Makes a PSBT that spends made-up coins of the seed on the device and holds it up to the device&rsquo;s camera. After you sign it, this page reads the signed PSBT from the device&rsquo;s screen and checks every signature with its own code.</p>
-        <div class="btn-row"><select id="ssTxKind" aria-label="Kind of practice transaction"><option value="single">Single key: 2 inputs</option><option value="multi">2-of-3 multisig: 1 input</option></select><button type="button" id="ssTxGo" class="secondary small">PRACTICE TRANSACTION</button></div>
+        <p class="hint" style="margin:0 0 8px;">The practice wallet: sample transactions that spend made-up coins of the seed on the device, held up to the device&rsquo;s camera. Two of them have a problem to spot: do not sign those. After you sign one, this page reads the signed PSBT from the device&rsquo;s screen and checks every signature with its own code.</p>
+        <div class="btn-row"><select id="ssTxKind" aria-label="Kind of practice transaction"><option value="single">Single key: 2 inputs</option><option value="self">Send to yourself</option><option value="multi">2-of-3 multisig: 1 input</option><option value="stranger">Spot the problem: where does the change go?</option><option value="bigfee">Spot the problem: look at the fee</option></select><button type="button" id="ssTxGo" class="secondary small">PRACTICE TRANSACTION</button></div>
         <p class="ms-test" id="ssTxNet" hidden>Mainnet: these coins don&rsquo;t exist; this PSBT can never be broadcast.</p>
         <p class="status" id="ssTxStatus" aria-live="polite"></p>
         <p class="hint" id="ssTxCoins"></p>
-        <div class="ss-own" id="ssOwnBox">
-        <h3 class="sec">Use it for real: your own PSBT, address, wallet or message</h3>
-        <p class="ms-test">A browser is not a hardware signer. This device signs for real, inside this page: a real SeedSigner keeps the seed off every computer, and this does not. With real coins, use it only on an offline computer you trust, check every address and amount on its screen against what you meant to send, and wipe the seed afterwards (CLEAR ALL).</p>
-        <p class="hint" style="margin:0 0 8px;">Paste a PSBT from your wallet (Sparrow, Electrum, Nunchuk, Specter, Bitcoin Core: base64, hex, or the parts of an animated UR or BBQr QR, one per line), an address to verify, a multisig wallet descriptor (sortedmulti), or a signmessage request; or choose a .psbt file, or scan a QR with this computer&rsquo;s camera. HOLD UP TO THE DEVICE shows it to the device&rsquo;s camera; then choose Scan on the device. The device reviews it and signs as SeedSigner does, and the signed PSBT comes back here too, byte for byte as in its QR code.</p>
-        <textarea id="ssOwnIn" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your PSBT, address, wallet descriptor or signmessage request" placeholder="PSBT (cHNidP8... or 70736274ff...), address, wallet descriptor or signmessage request"></textarea>
-        <div class="btn-row"><button type="button" id="ssOwnGo">HOLD UP TO THE DEVICE</button><button type="button" class="secondary small" id="ssOwnFileBtn">CHOOSE .PSBT FILE</button><input type="file" id="ssOwnFile" accept=".psbt,.txt,application/octet-stream" hidden><button type="button" class="secondary small" id="ssOwnClear">CLEAR</button></div>
-        <p class="status" id="ssOwnStatus" aria-live="polite"></p>
-        <ul class="ss-own-w" id="ssOwnWarns" hidden></ul>
-        <p class="hint" style="margin:10px 0 6px;"><b>Sign a message.</b> Signed with the key of one of the seed&rsquo;s single-key receive addresses, in the Bitcoin Signed Message format SeedSigner uses. Turn on Message signing on the device first (Settings &gt; Advanced).</p>
-        <textarea id="ssMsgIn" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Message to sign" placeholder="Message to sign (plain letters, digits and punctuation)"></textarea>
-        <div class="btn-row"><select id="ssMsgType" aria-label="Address type of the signing key"><option value="84">Native SegWit (bc1q)</option><option value="49">Nested SegWit (3...)</option><option value="44">Legacy (1...)</option></select><input type="number" id="ssMsgIdx" min="0" max="999999" step="1" value="0" aria-label="Receive address number"><button type="button" class="secondary small" id="ssMsgGo">HOLD UP THE MESSAGE</button></div>
-        <div id="ssOwnOut" hidden>
-          <p class="status" id="ssOwnOutSay" aria-live="polite"></p>
-          <textarea id="ssOwnOutText" rows="4" readonly spellcheck="false" aria-label="What the device made: the signed PSBT (base64) or the signed message"></textarea>
-          <div class="btn-row"><button type="button" class="secondary small" id="ssOwnCopy">COPY</button><button type="button" class="secondary small" id="ssOwnCopySig" hidden>COPY SIGNATURE ONLY</button><button type="button" class="secondary small" id="ssOwnSave">SAVE .PSBT FILE</button></div>
-        </div>
-        </div>
       </div>
     </details>
   </section>
@@ -338,7 +323,7 @@
     </div>
   </section>
 
-  <footer><span id="drVersion">DRYRUN v1.0.2</span>. One HTML file, no network, no tracking. Unofficial; not made by or connected to SeedSigner.</footer>
+  <footer><span id="drVersion">DRYRUN v1.1.0</span>. One HTML file, no network, no tracking. Unofficial; not made by or connected to SeedSigner.</footer>
 </div>
 <div id="printArea" aria-hidden="true"></div>
 <script>
@@ -21770,6 +21755,7 @@ async function ssLearnAddress(n, branch, index) {   // native SegWit address of 
 async function ssLearnFeed(kind) {   // [frames, what the panel says the practice wallet shows]
   const n = ssLearnNet();
   if (kind === "seedqr") return [[SS_LEARN_ABANDON.split(" ").map((w) => String(WORDLIST.indexOf(w)).padStart(4, "0")).join("")], "the SeedQR of the public test seed abandon ... about"];
+  if (kind === "myseedqr") { const sd = ssLearnSeed(), m = sd ? sd.mnemonic_str : SS_LEARN_ABANDON; return [[m.split(" ").map((w) => String(WORDLIST.indexOf(w)).padStart(4, "0")).join("")], "your drawn SeedQR (here, a perfect copy of seed " + ssLearnT("{fp}") + ")"]; }
   if (kind === "address") { const a = await ssLearnAddress(n, 0, 3); return [["bitcoin:" + a], "receive address #3 of " + (ssLearnSeed() ? "seed " + ssLearnT("{fp}") : "the public test seed") + ": " + a]; }
   if (kind === "signmsg") return [["signmessage m/84h/" + ssLearnCoin(n) + "h/0h/0/0 ascii:" + SS_LEARN_MSG], "a request to sign the message \"" + SS_LEARN_MSG + "\""];
   if (kind === "descriptor") { const t = ssLearn.tx && ssLearn.tx.descriptor; return t ? [[t], "the 2-of-3 wallet descriptor"] : [null, ""]; }
@@ -21843,9 +21829,22 @@ async function ssLearnBuild(kind) {
   const markScript = concatBytes(Uint8Array.of(SS_LEARN_MARK.length), new TextEncoder().encode(SS_LEARN_MARK));
   const prev = ssLearnTxBytes({ version: 2, locktime: 0, ins: [{ prev: new Uint8Array(32), vout: 0xffffffff, script: markScript, seq: 0xffffffff }], outs: coins.map((c) => ({ amount: c.amount, script: c.script })) });
   const prevHash = await dsha256(prev);
-  const inSum = coins.reduce((a, c) => a + c.amount, 0n), payAmt = multi ? 200000n : 120000n, fee = multi ? 1500n : 1000n, chg = inSum - payAmt - fee;
-  const utx = ssLearnTxBytes({ version: 2, locktime: 0, ins: coins.map((c, i) => ({ prev: prevHash, vout: i, script: new Uint8Array(0), seq: 0xfffffffd })),
-    outs: [{ amount: payAmt, script: payScript }, { amount: chg, script: change.script }] });
+  // DRYRUN 1.1.0, the practice wallet: what each kind of practice transaction pays. single and multi as before; self: to your own
+  // receive address #5 (a self-transfer); bigfee: a fee far larger than the payment; stranger: no change, and the rest of the coins
+  // go to an address that is not yours (receive #0 of a public test seed), so the device warns "Full Spend!" and shows two recipients.
+  const inSum = coins.reduce((a, c) => a + c.amount, 0n);
+  const payAmt = multi ? 200000n : kind === "bigfee" ? 20000n : 120000n, fee = multi ? 1500n : kind === "bigfee" ? 150000n : kind === "stranger" ? 10000n : 1000n;
+  let chg = inSum - payAmt - fee, outs, outMaps, toSelf = null, stranger = null;
+  if (kind === "self") {
+    const spub = await ssLearnChild(A, 0, 5);
+    toSelf = { script: await ssLearnP2wpkh(spub), map: [[Uint8Array.of(0x02, ...spub), ssLearnPath(A.fp, [84 + SS_LEARN_H, coin + SS_LEARN_H, SS_LEARN_H, 0, 5])]] };
+    outs = [{ amount: payAmt, script: toSelf.script }, { amount: chg, script: change.script }]; outMaps = [toSelf.map, change.map];
+  } else if (kind === "stranger") {
+    const st = await ssLearnAcct(await mnemonicToSeed(SS_LEARN_TEST.C, ""), "wpkh", n);
+    stranger = { amount: chg, script: await ssLearnP2wpkh(await ssLearnChild(st, 0, 0)) };
+    outs = [{ amount: payAmt, script: payScript }, { amount: stranger.amount, script: stranger.script }]; outMaps = [[], []]; chg = 0n;
+  } else { outs = [{ amount: payAmt, script: payScript }, { amount: chg, script: change.script }]; outMaps = [[], change.map]; }
+  const utx = ssLearnTxBytes({ version: 2, locktime: 0, ins: coins.map((c, i) => ({ prev: prevHash, vout: i, script: new Uint8Array(0), seq: 0xfffffffd })), outs });
   const global = [[Uint8Array.of(0x00), utx]];
   if (multi) for (const c of cos) global.push([Uint8Array.of(0x01, ...c.raw), ssLearnPath(c.fp, [48 + SS_LEARN_H, coin + SS_LEARN_H, SS_LEARN_H, 2 + SS_LEARN_H])]);
   for (const c of coins) {
@@ -21854,8 +21853,9 @@ async function ssLearnBuild(kind) {
     for (const [pub, d] of c.derivs) m.push([Uint8Array.of(0x06, ...pub), d]);
     inMaps.push(m);
   }
-  const tx = { kind, net: n, own: sp.own, real: !!sp.real, fp: A.fp, global, inMaps, outMaps: [[], change.map], utx, descriptor,
-    prevTxid: hex(prevHash.slice().reverse()), inSum, payAmt, fee, chg, payAddr: bech32Encode(ssLearnHrp(n), 0, payScript.slice(2)), nIn: coins.length, result: null };
+  const tx = { kind, net: n, own: sp.own, real: !!sp.real, fp: A.fp, global, inMaps, outMaps, utx, descriptor,
+    prevTxid: hex(prevHash.slice().reverse()), inSum, payAmt, fee, chg, payAddr: bech32Encode(ssLearnHrp(n), 0, (toSelf ? toSelf.script : payScript).slice(2)), nIn: coins.length, result: null,
+    strangerAmt: stranger ? stranger.amount : 0n, strangerAddr: stranger ? bech32Encode(ssLearnHrp(n), 0, stranger.script.slice(2)) : "" };
   tx.psbt = ssLearnPsbt(tx);
   tx.frames = urEncode("crypto-psbt", CB.bytes(Array.from(tx.psbt)), 100);
   return tx;
@@ -21964,6 +21964,19 @@ const SS_LEARN_LESSONS = [
       { do: "Press the joystick in (I understand).", see: "Xpub Details: the fingerprint, the derivation path and the xpub.", at: ssLearnIs("SSSeedExportXpubDetailsView") },
       { do: "Press the joystick in (Export xpub).", see: "A QR code that holds the xpub.", at: ssLearnIs("SSSeedExportXpubQRDisplayView") },
     ] },
+  // DRYRUN 1.1.0: draw a SeedQR, then let the device check your drawing by scanning it back
+  { id: "seedqr", name: "Back up a seed as a SeedQR and check it",
+    note: SS_LEARN_SEEDNOTE + " You copy its SeedQR onto paper, square by square, and the device scans your copy back to check it. Print a blank grid first (PRINT tab): 25 x 25 for 12 words, 29 x 29 for 24.",
+    end: "Your SeedQR scanned back as the same seed. A SeedQR is your seed: keep it as safe as the words, never photograph it, and never show it to a camera that is online.",
+    steps: [...SS_LEARN_LOAD,
+      { do: "Open the seed. If you just loaded it, you are there already. Otherwise go to Home (press the joystick left to select the back arrow at the top left, then press it in, until you see Home), choose Seeds, then {fp}.", see: "A menu titled {fp}: Scan transaction, Export xpub, Address explorer, Backup seed, Discard seed.", at: ssLearnIs("SSSeedOptionsView") },
+      { do: "Move down to Backup seed and press in.", see: "Backup Seed: View seed words and Export as SeedQR.", at: ssLearnIs("SSSeedBackupView") },
+      { do: "Move down to Export as SeedQR and press in.", see: "SeedQR Format: Standard and Compact.", at: ssLearnIs("SSSeedTranscribeSeedQRFormatView") },
+      { do: "Standard is selected: press in. Read each warning and press in again.", see: "The whole SeedQR, with Begin.", at: ssLearnIs("SSSeedTranscribeSeedQRWholeQRView") },
+      { do: "Press in (Begin).", see: "A zoomed-in part of the SeedQR: zone A-1, with a grid like the one you printed.", at: ssLearnIs("SSSeedTranscribeSeedQRZoomedInView") },
+      { do: "Fill in the black squares of each zone on your grid. The joystick moves zone by zone. When the whole grid is done, press the joystick in.", see: "Confirm SeedQR?, with Confirm SeedQR and Done.", at: ssLearnIs("SSSeedTranscribeSeedQRConfirmQRPromptView") },
+      { feed: "myseedqr", do: "Confirm SeedQR is selected: press in. The practice wallet holds up your drawing (here, a perfect copy) to the device's camera.", see: "Confirm SeedQR: Success! Your transcribed SeedQR successfully scanned and yielded the same seed.", at: ssLearnIs("SSSeedTranscribeSeedQRConfirmSuccessView") },
+    ] },
   { id: "address", name: "Check a receive address before you use it",
     note: SS_LEARN_SEEDNOTE + " The practice wallet shows an address it says is yours: the device checks that the address really comes from your seed.",
     end: "The address is receive address #3 of your seed. Check every address this way before you use it: malware on a computer can swap the address on its screen.",
@@ -21980,6 +21993,30 @@ const SS_LEARN_LESSONS = [
       ...SS_LEARN_PSBT,
       { do: "Check the address and the amount. Press the joystick in (Next).", see: "Your Change: the change and its address, checked by the device as yours.", at: ssLearnIs("SSPSBTChangeDetailsView") },
       ...SS_LEARN_SIGN,
+    ] },
+  // DRYRUN 1.1.0: a transaction that sends your change to someone else; the lesson ends with NOT signing it
+  { id: "spot", name: "Spot a bad transaction (and do not sign it)", txKind: "stranger",
+    note: SS_LEARN_SEEDNOTE + " The practice transaction looks like a normal payment, but the rest of your coins go to an address that is not yours. Malware can change a transaction like this before it reaches your device: the device's screens are where you catch it.",
+    end: "You did not sign. The device showed it plainly: Full Spend! (no change comes back) and a second recipient you never meant to pay. If a real transaction looks like this, do not approve it: make it again on a computer you trust.",
+    steps: [...SS_LEARN_LOAD, SS_LEARN_HOME,
+      { do: "Below, under Practice transaction, choose Spot the problem: where does the change go? and press PRACTICE TRANSACTION.", see: "Under the button: what the transaction spends and pays.", at: ssLearnTxIs("stranger") },
+      { feed: "tx", do: "On the device, Scan is selected: press the joystick in. The practice wallet holds the transaction up to the camera.", see: "Select Signer, with {fp}.", at: ssLearnIs("SSPSBTSelectSeedView") },
+      { do: "Choose {fp} and press the joystick in.", see: "Review Transaction: it sends to two recipients.", at: ssLearnIs("SSPSBTOverviewView") },
+      { do: "Press the joystick in (Review details).", see: "Full Spend!: no change is coming back to your wallet.", at: ssLearnIs("SSPSBTNoChangeWarningView") },
+      { do: "That is the first warning sign: where did your change go? Press in (Continue).", see: "Transaction Math: no change at all.", at: ssLearnIs("SSPSBTMathView") },
+      { do: "Press the joystick in (Review recipients).", see: "Will Send (#1): the payment you meant to make.", at: (s) => s.view === "SSPSBTAddressDetailsView" && +ssLearnArg(s, "address_num") === 0 },
+      { do: "Press the joystick in (Next).", see: "Will Send (#2): the rest of your coins, to an address you do not know.", at: (s) => s.view === "SSPSBTAddressDetailsView" && +ssLearnArg(s, "address_num") === 1 },
+      { do: "Do NOT approve this. Go back: press the joystick left to select the back arrow at the top left, then press it in, until you see Home.", see: "Home. The transaction is not signed.", at: ssLearnIs("SSMainMenuView") },
+    ] },
+  // DRYRUN 1.1.0: the same words with a passphrase are a different wallet
+  { id: "passphrase", name: "Add a passphrase (and see the fingerprint change)",
+    note: "This lesson loads the public test seed abandon ... about (fingerprint " + SS_LEARN_FP + ") and adds a one-letter passphrase. A passphrase makes a completely different wallet from the same words: forget it or mistype it, and the coins are gone. (If you turned BIP-39 passphrase off in Settings > Advanced, turn it back on first.)",
+    end: "Same words, different passphrase, different wallet: the fingerprint is no longer " + SS_LEARN_FP + ". Write the passphrase down as carefully as the words, and keep the fingerprint with it so you can check it next time.",
+    steps: [SS_LEARN_HOME,
+      { feed: "seedqr", do: "Scan is selected: press the joystick in. The practice wallet holds up the SeedQR of the public test seed.", see: "Finalize Seed with the fingerprint " + SS_LEARN_FP + ", Done and BIP-39 Passphrase.", at: ssLearnIs("SSSeedFinalizeView") },
+      { do: "Move down to BIP-39 Passphrase and press in.", see: "Add Passphrase, with a keyboard.", at: ssLearnIs("SSSeedAddPassphraseView") },
+      { do: "Press the joystick in once: it types the letter on the selected key. Then press KEY3 (the lowest key on the right) to finish.", see: "Verify Passphrase: what you typed, and the new fingerprint.", at: ssLearnIs("SSSeedReviewPassphraseView") },
+      { do: "Compare: the fingerprint is not " + SS_LEARN_FP + " any more. Done is selected: press in (and press Done again if Finalize Seed comes back).", see: "A menu titled with the new fingerprint.", at: (s) => s.view === "SSSeedOptionsView" && !!s.title && s.title !== SS_LEARN_FP },
     ] },
   { id: "multisig", name: "Set up and check a 2-of-3 multisig", txKind: "multi",
     note: "This lesson uses the seed on the device (the newest one loaded, fingerprint {fp}; with none loaded, it first loads the public test seed abandon ... about) and two public test seeds for the other cosigners. The coins are made up, so the transaction can never be broadcast.",
@@ -22040,7 +22077,10 @@ function ssLearnRender() {
   else if (T) {
     const sats = (v) => v.toLocaleString("en-US") + " sats";
     s = (T.result ? T.result.text : T.status || ((T.own ? "Spends " : "No seed is loaded on the device, so this spends ") + T.nIn + " made-up coin" + (T.nIn > 1 ? "s" : "") + " of seed " + T.fp + (T.kind === "multi" ? " (2-of-3 multisig with two public test seeds)" : "") +
-      ": " + sats(T.inSum) + " in, " + sats(T.payAmt) + " to a test address, " + sats(T.chg) + " change, " + sats(T.fee) + " fee. On the device, choose Scan" + (T.own ? "" : " after you load the public test seed abandon ... about") + "."));
+      ": " + sats(T.inSum) + " in, " + sats(T.payAmt) + (T.kind === "self" ? " to your own receive address #5" : " to a test address") + ", " +
+      (T.kind === "stranger" ? sats(T.strangerAmt) + " to another address, no change" : sats(T.chg) + " change") + ", " + sats(T.fee) + " fee." +
+      (T.kind === "stranger" || T.kind === "bigfee" ? " Something is wrong with this one: find it on the device before you approve anything." : "") +
+      " On the device, choose Scan" + (T.own ? "" : " after you load the public test seed abandon ... about") + "."));
   }
   ssLearnSetText("ssTxStatus", s);
   ssLearnSetText("ssTxCoins", T ? "The coins come from made-up transaction " + T.prevTxid.slice(0, 16) + "..., marked \"" + SS_LEARN_MARK + "\"." : "");
@@ -22095,7 +22135,7 @@ function ssLearnStart() {
 }
 async function ssLearnTxGo() {
   if (!ssPageOn || ssLearn.building) return;
-  const kind = (ssLearnEl("ssTxKind") || {}).value === "multi" ? "multi" : "single";
+  const v = (ssLearnEl("ssTxKind") || {}).value, kind = ["single", "multi", "self", "bigfee", "stranger"].includes(v) ? v : "single";
   ssLearn.building = true; ssLearn.tx = null; ssLearnHide(); ssLearnRender();
   const gen = ssLearn.gen;   // review L18: closing the box (ssLearnWipe) while it is built drops it
   try { const tx = await ssLearnBuild(kind); if (ssPageOn && gen === ssLearn.gen) { ssLearn.tx = tx; await ssLearnArm("tx"); } }
@@ -23022,7 +23062,7 @@ if (document.readyState === "loading") document.addEventListener("DOMContentLoad
 // dice and coin flips use the simulator's port of SeedSigner's own code (ssGenerateMnemonicFromDice / ...FromCoinFlips).
 // Nothing here is stored: the only browser storage is the THEME choice.
 
-const DR_VERSION = "1.0.2";
+const DR_VERSION = "1.1.0";
 const DR_BITS = { 12: 128, 24: 256 };
 const $d = (id) => document.getElementById(id);
 let drQueue = Promise.resolve();

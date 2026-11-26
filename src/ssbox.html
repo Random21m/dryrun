@@ -31,27 +31,10 @@
         <p class="status" id="ssLoadStatus" aria-live="polite"></p>
         <p class="status" id="ssCamNote" aria-live="polite"></p>
         <h3 class="sec">Practice transaction</h3>
-        <p class="hint" style="margin:0 0 8px;">Makes a PSBT that spends made-up coins of the seed on the device and holds it up to the device&rsquo;s camera. After you sign it, this page reads the signed PSBT from the device&rsquo;s screen and checks every signature with its own code.</p>
-        <div class="btn-row"><select id="ssTxKind" aria-label="Kind of practice transaction"><option value="single">Single key: 2 inputs</option><option value="multi">2-of-3 multisig: 1 input</option></select><button type="button" id="ssTxGo" class="secondary small">PRACTICE TRANSACTION</button></div>
+        <p class="hint" style="margin:0 0 8px;">The practice wallet: sample transactions that spend made-up coins of the seed on the device, held up to the device&rsquo;s camera. Two of them have a problem to spot: do not sign those. After you sign one, this page reads the signed PSBT from the device&rsquo;s screen and checks every signature with its own code.</p>
+        <div class="btn-row"><select id="ssTxKind" aria-label="Kind of practice transaction"><option value="single">Single key: 2 inputs</option><option value="self">Send to yourself</option><option value="multi">2-of-3 multisig: 1 input</option><option value="stranger">Spot the problem: where does the change go?</option><option value="bigfee">Spot the problem: look at the fee</option></select><button type="button" id="ssTxGo" class="secondary small">PRACTICE TRANSACTION</button></div>
         <p class="ms-test" id="ssTxNet" hidden>Mainnet: these coins don&rsquo;t exist; this PSBT can never be broadcast.</p>
         <p class="status" id="ssTxStatus" aria-live="polite"></p>
         <p class="hint" id="ssTxCoins"></p>
-        <div class="ss-own" id="ssOwnBox">
-        <h3 class="sec">Use it for real: your own PSBT, address, wallet or message</h3>
-        <p class="ms-test">A browser is not a hardware signer. This device signs for real, inside this page: a real SeedSigner keeps the seed off every computer, and this does not. With real coins, use it only on an offline computer you trust, check every address and amount on its screen against what you meant to send, and wipe the seed afterwards (CLEAR ALL).</p>
-        <p class="hint" style="margin:0 0 8px;">Paste a PSBT from your wallet (Sparrow, Electrum, Nunchuk, Specter, Bitcoin Core: base64, hex, or the parts of an animated UR or BBQr QR, one per line), an address to verify, a multisig wallet descriptor (sortedmulti), or a signmessage request; or choose a .psbt file, or scan a QR with this computer&rsquo;s camera. HOLD UP TO THE DEVICE shows it to the device&rsquo;s camera; then choose Scan on the device. The device reviews it and signs as SeedSigner does, and the signed PSBT comes back here too, byte for byte as in its QR code.</p>
-        <textarea id="ssOwnIn" rows="3" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Your PSBT, address, wallet descriptor or signmessage request" placeholder="PSBT (cHNidP8... or 70736274ff...), address, wallet descriptor or signmessage request"></textarea>
-        <div class="btn-row"><button type="button" id="ssOwnGo">HOLD UP TO THE DEVICE</button><button type="button" class="secondary small" id="ssOwnFileBtn">CHOOSE .PSBT FILE</button><input type="file" id="ssOwnFile" accept=".psbt,.txt,application/octet-stream" hidden><button type="button" class="secondary small" id="ssOwnClear">CLEAR</button></div>
-        <p class="status" id="ssOwnStatus" aria-live="polite"></p>
-        <ul class="ss-own-w" id="ssOwnWarns" hidden></ul>
-        <p class="hint" style="margin:10px 0 6px;"><b>Sign a message.</b> Signed with the key of one of the seed&rsquo;s single-key receive addresses, in the Bitcoin Signed Message format SeedSigner uses. Turn on Message signing on the device first (Settings &gt; Advanced).</p>
-        <textarea id="ssMsgIn" rows="2" spellcheck="false" autocomplete="off" autocapitalize="off" aria-label="Message to sign" placeholder="Message to sign (plain letters, digits and punctuation)"></textarea>
-        <div class="btn-row"><select id="ssMsgType" aria-label="Address type of the signing key"><option value="84">Native SegWit (bc1q)</option><option value="49">Nested SegWit (3...)</option><option value="44">Legacy (1...)</option></select><input type="number" id="ssMsgIdx" min="0" max="999999" step="1" value="0" aria-label="Receive address number"><button type="button" class="secondary small" id="ssMsgGo">HOLD UP THE MESSAGE</button></div>
-        <div id="ssOwnOut" hidden>
-          <p class="status" id="ssOwnOutSay" aria-live="polite"></p>
-          <textarea id="ssOwnOutText" rows="4" readonly spellcheck="false" aria-label="What the device made: the signed PSBT (base64) or the signed message"></textarea>
-          <div class="btn-row"><button type="button" class="secondary small" id="ssOwnCopy">COPY</button><button type="button" class="secondary small" id="ssOwnCopySig" hidden>COPY SIGNATURE ONLY</button><button type="button" class="secondary small" id="ssOwnSave">SAVE .PSBT FILE</button></div>
-        </div>
-        </div>
       </div>
     </details>

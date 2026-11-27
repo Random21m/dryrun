@@ -1,8 +1,8 @@
 // Offline copy of DRYRUN on its web page (GitHub Pages). Network first: online you always get the current files; offline the
 // last copy you opened is used. Bump CACHE on every release (tools/release.sh checks it names the version). Only DRYRUN's own
 // old caches are removed: other pages on the same site (random21m.github.io) keep theirs.
-const CACHE = 'dryrun-1.1.0';
-const FILES = ['./', 'index.html', 'dryrun.html', 'logo.png'];
+const CACHE = 'dryrun-1.1.1';
+const FILES = ['./', 'index.html', 'dryrun.html', 'logo.png', 'manifest.webmanifest', 'logo-192.png', 'logo-512.png', 'apple-touch-icon.png'];
 self.addEventListener('install', (e) => { e.waitUntil(caches.open(CACHE).then((c) => c.addAll(FILES)).then(() => self.skipWaiting())); });
 self.addEventListener('activate', (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k.startsWith('dryrun-') && k !== CACHE).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener('fetch', (e) => {

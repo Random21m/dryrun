@@ -16,7 +16,7 @@ for (const [f, h] of Object.entries(fz)) ok(sha(f) === h, f + ' is frozen (sha25
 ok(fs.readdirSync(path.join(root, 'src/sim')).filter((x) => x.endsWith('.js')).every((x) => fz['src/sim/' + x]), 'every device source file is in the frozen list');
 const v = (rd('dryrun.html').match(/DRYRUN v(\d+\.\d+\.\d+)/) || [])[1], pj = JSON.parse(rd('package.json')).version;
 ok(v && v === pj && rd('src/app.js').includes('DR_VERSION = "' + v + '"') && rd('sw.js').includes("'dryrun-" + v + "'"), 'the version agrees: page footer, package.json, app.js and the offline cache (' + v + ', ' + pj + ')');
-ok(/default-src 'none'/.test(rd('dryrun.html')) && !/<script[^>]+src=|<link[^>]+href="(?!data:)|<img[^>]+src="(?!data:)/i.test(rd('dryrun.html')), 'dryrun.html loads nothing from outside: no script, style sheet or image from a URL (the logo is built in as data)');
+ok(/default-src 'none'/.test(rd('dryrun.html')) && !/<script[^>]+src=|<link(?! rel="manifest" href="manifest\.webmanifest">)[^>]+href="(?!data:)|<img[^>]+src="(?!data:)/i.test(rd('dryrun.html')), 'dryrun.html loads nothing from outside: no script, style sheet or image from a URL; the one link is its own home-screen manifest next to it (the logo is built in as data)');
 { const lines = ['ss_own.js', 'ss_learn.js', 'ss_page.js'].flatMap((f) => rd('src/sim/' + f).split('\n')).filter((l) => !/^\s*\/\//.test(l) && /LOAD INTO THE PRACTICE SIGNER|YOUR SEED|MAKE A SEED/.test(l.replace(/\/\/.*$/, '')));
   // left only in a one-click load (ssAuto*, vfSignerLoadSeed) and FORGE SEED (ssForgeGo) that nothing in DRYRUN starts
   const unreach = lines.every((l) => /ssAutoEnd\(|SS_AUTO_WENT_ONLINE|is shown in MAKE A SEED/.test(l));

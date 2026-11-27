@@ -10,6 +10,7 @@ function build() {
   const one = (a, b) => { must(html.split(a).length === 2, "not exactly once: " + a); html = html.replace(a, () => b); };
   one("/*SIMCSS*/", rd("src/sim.css"));
   html = html.split("/*LOGO64*/").join(fs.readFileSync(path.join(R, "logo.svg")).toString("base64"));   // the die: tab icon and header
+  one("/*APPLE64*/", fs.readFileSync(path.join(R, "apple-touch-icon.png")).toString("base64"));   // the die on the home screen (iPhone, iPad)
   one("<!--SSBOX-->", rd("src/ssbox.html").replace('<details id="ssBox">', '<details id="ssBox" open>'));
   const tools = rd("src/sim/ss_tools_settings.js");
   const mark = tools.indexOf("/* ====", tools.indexOf("PART B: views and screens") - 200);

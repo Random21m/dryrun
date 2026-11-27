@@ -49,6 +49,7 @@ The signature must be by `2509 D115 03B7 2CBF BCB5  408F 4B72 9F05 6A52 9340` (s
 
 ## Changelog
 
+- **1.1.1**: saved to a phone's home screen, DRYRUN shows its die (the icon is built into the page; a small app manifest sits next to it on the web page). Nothing else changes.
 - **1.1.0**: three new lessons (back up and check a SeedQR, spot a bad transaction, add a passphrase); the practice wallet has five sample transactions; signing your own real PSBTs and messages (Use it for real) is removed: DRYRUN is for practice only. SeedSigner 0.8.7 is still the newest release, so the device is unchanged.
 - **1.0.2**: a fresh start of the repository: one history, the logo, nothing else changed in the page.
 - **1.0.1**: the DRYRUN logo, a coral 3D die, as the header and tab icon.

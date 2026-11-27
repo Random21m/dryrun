@@ -60,6 +60,12 @@ if (loaded) {
   ok(await page.title() === 'DRYRUN', 'the page is called DRYRUN');
   { const lg = await page.evaluate(() => { const i = document.querySelector('.brand img.logo'), l = document.querySelector('link[rel=icon]'); return { w: i ? i.naturalWidth : 0, icon: l ? l.href.slice(0, 26) : '' }; });
     ok(lg.w > 0 && lg.icon === 'data:image/svg+xml;base64,', 'the logo (the die) shows in the header and is the tab icon (' + JSON.stringify(lg) + ')'); }
+  { const hs = await page.evaluate(async () => { const a = document.querySelector('link[rel=apple-touch-icon]'), m = document.querySelector('link[rel=manifest]');
+      const img = new Image(); if (a) { img.src = a.href; try { await img.decode(); } catch (e) {} }
+      return { apple: a ? a.getAttribute('href').slice(0, 22) : '', w: img.naturalWidth, h: img.naturalHeight, manifest: m ? m.getAttribute('href') : '',
+        title: (document.querySelector('meta[name=apple-mobile-web-app-title]') || {}).content, theme: (document.querySelector('meta[name=theme-color]') || {}).content }; });
+    ok(hs.apple === 'data:image/png;base64,' && hs.w === 180 && hs.h === 180 && hs.manifest === 'manifest.webmanifest' && hs.title === 'DRYRUN' && hs.theme === '#0e0d0c',
+      '1.1.1: saved to the home screen it shows the die: a 180 x 180 apple-touch-icon in the page, the web app manifest, the name DRYRUN (' + JSON.stringify(hs) + ')'); }
 
   // ---------------- 1. dice and coin flips -> words (SeedSigner) ----------------
   const ent = async (kind, wc, text) => { await page.evaluate(() => showTab('check')); await set('enKind', kind); await set('enWc', String(wc)); await set('enIn', text); await click('enGo'); return { words: await $t('enWords'), msg: await $t('enMsg') }; };

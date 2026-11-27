@@ -21,6 +21,8 @@ DRYRUN is one HTML file. Open `dryrun.html` in a browser, on a computer that is 
 
 ## Check the file before you use it
 
+Download `dryrun.html`, `SHA256SUMS` and `SHA256SUMS.asc` from the [release page](https://github.com/Random21m/dryrun/releases/latest), then:
+
 ```
 gpg --import dryrun-signing-key.asc
 gpg --verify SHA256SUMS.asc SHA256SUMS

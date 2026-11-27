@@ -1,147 +1,135 @@
 #!/usr/bin/env bash
-# DRYRUN release, the maintainer's three steps. Run from a clone of the dryrun repository on your own computer.
-# (Adapted from the original page's tools/release.sh: the same steps, for dryrun.html in Random21m/dryrun.)
+# Signed release in one command (the same script in every repo; the repo's details are in tools/release.conf).
+# On your own computer, after main is pushed and the site has deployed. Easiest: type `release` (see release-all.sh), which runs
+# this for every project that needs it. Or by hand, in the clone:
 #
-#   bash tools/release.sh sign 1.0.0      1. checks the frozen file, signs SHA256SUMS with your key, pushes the signature
-#   bash tools/release.sh publish 1.0.0   2. after main and the tag are pushed: checks them, makes the GitHub release, stamps it
-#   bash tools/release.sh stamp 1.0.0     3. a few hours later: adds the Bitcoin block to the timestamp
+#   bash tools/release.sh            (finds the version on main itself)
+#   bash tools/release.sh 1.2.3      (or say which version it must be)
+#   bash tools/release.sh --pending  (only prints the version if it is live but not released yet; changes nothing)
 #
-# Your private key never leaves this computer: gpg asks for its passphrase itself, and this script never sees it.
-# Every step checks before it acts and stops at the first thing that doesn't match.
+# 1. gets main from GitHub and reads its version (release.conf: VERSION_FILE, CHECKS)
+# 2. makes SHA256SUMS: one line per site file, and checks every file on the live site is the one in main
+# 3. shows you the checksums and, after you type yes, signs SHA256SUMS with your key (gpg asks for its passphrase itself)
+#    (RELEASE_YES=1 means you already said yes, in `release`)
+# 4. makes the GitHub release vX: the notes (this version's part of CHANGELOG.md, or the notebook's notes file), SHA256SUMS
+#    and its signature
+# 5. downloads the release again and checks the files, the signature and the tag
+#
+# Your private key never leaves this computer, and this script never sees its passphrase. Every step checks before it acts and
+# stops at the first thing that does not match. Needs: git, gpg, gh (logged in: gh auth login), curl.
 set -euo pipefail
 
-RELEASE_KEY=2509D11503B72CBFBCB5408F4B729F056A529340   # the release key in SECURITY.md
-FPR=${VF_SIGNING_FPR:-$RELEASE_KEY}
-REPO=${VF_REPO:-Random21m/dryrun}
-REMOTE=${VF_REMOTE:-origin}
+RELEASE_KEY=2509D11503B72CBFBCB5408F4B729F056A529340   # the release key (signing-key.asc in the repo)
+NOTES_REPO=Random21m/second-brain
 
 say()  { printf '\n\033[1m%s\033[0m\n' "$*"; }
 ok()   { printf '  \033[32mOK\033[0m  %s\n' "$*"; }
 die()  { printf '\n\033[31mSTOP:\033[0m %s\nNothing after this point was done.\n' "$*" >&2; exit 1; }
 need() { command -v "$1" >/dev/null 2>&1 || die "$1 is not installed. $2"; }
+sha()  { if command -v sha256sum >/dev/null 2>&1; then sha256sum | cut -d' ' -f1; else shasum -a 256 | cut -d' ' -f1; fi; }
 
-sha() { if command -v sha256sum >/dev/null 2>&1; then sha256sum "$1" | cut -d' ' -f1; else shasum -a 256 "$1" | cut -d' ' -f1; fi; }
-cid() { python3 -c "import hashlib,base64,sys; h=hashlib.sha256(open(sys.argv[1],'rb').read()).digest(); print('b'+base64.b32encode(bytes([1,0x55,0x12,0x20])+h).decode().lower().rstrip('='))" "$1"; }
-
-# the frozen files must agree with each other: SHA256SUMS names dryrun.html with its real hash, CID.txt is its content ID,
-# and the page says it is this version
-check_files() {
-  local v=$1
-  [ -f dryrun.html ] && [ -f SHA256SUMS ] && [ -f CID.txt ] || die "dryrun.html, SHA256SUMS or CID.txt is missing here."
-  local h; h=$(sha dryrun.html)
-  [ "$(cat SHA256SUMS)" = "$h  dryrun.html" ] || die "SHA256SUMS does not match dryrun.html (file hash $h)."
-  ok "SHA256SUMS matches dryrun.html: $h"
-  [ "$(tr -d '\n' < CID.txt)" = "$(cid dryrun.html)" ] || die "CID.txt does not match dryrun.html."
-  ok "CID.txt matches: $(tr -d '\n' < CID.txt)"
-  local pv; pv=$(grep -o '<span id="drVersion">DRYRUN v[0-9.]*</span>' dryrun.html | grep -o 'v[0-9][0-9.]*' | head -1)
-  [ "$pv" = "v$v" ] || die "the page says it is ${pv:-no version}, not v$v."
-  ok "the page is v$v"
-  grep -q "^const CACHE = 'dryrun-$v';" sw.js || die "sw.js does not name the cache dryrun-$v (bump CACHE)."
-  ok "the offline copy's cache is dryrun-$v"
-}
-
-check_sig() {
-  local st; st=$(gpg --status-fd 1 --verify SHA256SUMS.asc SHA256SUMS 2>/dev/null) || die "the signature on SHA256SUMS does not verify."
-  echo "$st" | grep -q "^\[GNUPG:\] VALIDSIG $FPR " || die "SHA256SUMS.asc is valid but not made by the release key $FPR."
-  ok "SHA256SUMS.asc is a good signature by $FPR"
-}
-
-clean_tree() { [ -z "$(git status --porcelain --untracked-files=no)" ] || die "this clone has uncommitted changes. Commit or stash them first."; }
-
-[ $# -eq 2 ] || { sed -n '2,10p' "$0"; exit 1; }
-CMD=$1; V=${2#v}
-[[ $V =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "the version should look like 1.0.0"
-TAG=v$V
-git rev-parse --show-toplevel >/dev/null 2>&1 || die "run this inside your clone of dryrun."
+MODE=release; V=
+case "${1:-}" in
+  -h|--help) sed -n '2,21p' "$0"; exit 0 ;;
+  --pending) MODE=pending ;;
+  "") ;;
+  *) V=${1#v} ;;
+esac
+[ -z "$V" ] || [[ $V =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "the version should look like 1.2.3"
+need git "Install git."; need gpg "Install GnuPG."; need gh "Install the GitHub CLI and run: gh auth login"; need curl "Install curl."
+git rev-parse --show-toplevel >/dev/null 2>&1 || die "run this inside your clone of the repository."
 cd "$(git rev-parse --show-toplevel)"
-[ "$FPR" = "$RELEASE_KEY" ] || printf '\n\033[33mNOTE:\033[0m signing and checking with %s, NOT the release key in SECURITY.md (VF_SIGNING_FPR is set). Only for testing.\n' "$FPR"
+[ -f tools/release.conf ] || die "tools/release.conf is missing."
+NAME=; REPO=; SITE=; SITE_ROOT=; SITE_FILES=(); VERSION_FILE=; VERSION_RE=; CHECKS=(); ASSETS=()
+# shellcheck source=/dev/null
+. tools/release.conf
+[ -n "$NAME" ] && [ -n "$REPO" ] && [ -n "$SITE" ] && [ ${#SITE_FILES[@]} -ge 1 ] && [ -n "$VERSION_FILE" ] && [ -n "$VERSION_RE" ] \
+  || die "tools/release.conf is not filled in (NAME, REPO, SITE, SITE_FILES, VERSION_FILE, VERSION_RE)."
+FPR=${RELEASE_SIGNING_FPR:-$RELEASE_KEY}
+SITE=${RELEASE_SITE:-$SITE}
+REMOTE=${RELEASE_REMOTE:-origin}
+P=${SITE_ROOT:+${SITE_ROOT%/}/}
+[ "$FPR" = "$RELEASE_KEY" ] || printf '\n\033[33mNOTE:\033[0m signing and checking with %s, NOT the release key (RELEASE_SIGNING_FPR is set). Only for testing.\n' "$FPR" >&2
+shopt -s nocasematch   # GitHub names are not case-sensitive
 case "$(git remote get-url "$REMOTE" 2>/dev/null)" in
   *"$REPO"|*"$REPO.git"|*"$REPO/") ;;
-  *) [ -n "${VF_REMOTE_OK:-}" ] || die "the remote \"$REMOTE\" is $(git remote get-url "$REMOTE" 2>/dev/null || echo missing), not github.com/$REPO." ;;
+  *) [ -n "${RELEASE_REMOTE_OK:-}" ] || die "the remote \"$REMOTE\" is $(git remote get-url "$REMOTE" 2>/dev/null || echo missing), not github.com/$REPO." ;;
 esac
-need git "Install git."; need python3 "Install Python 3."
+shopt -u nocasematch
+[ "$MODE" = pending ] || gpg --list-secret-keys "$FPR" >/dev/null 2>&1 || die "the release key $FPR is not on this computer."
 
-case $CMD in
-sign)
-  need gpg "Install GnuPG."
-  BR=${VF_BRANCH:-dev-$V}
-  BACK=$(git symbolic-ref -q --short HEAD || git rev-parse HEAD)
-  gpg --list-secret-keys "$FPR" >/dev/null 2>&1 || die "the release key $FPR is not on this computer."
-  clean_tree
-  say "1/4  Getting the frozen $BR from GitHub"
-  git fetch -q "$REMOTE" "$BR" || die "could not fetch $BR."
-  git checkout -q --detach FETCH_HEAD; ok "at $(git log --oneline -1)"
-  say "2/4  Checking the frozen files"
-  check_files "$V"
-  [ ! -f SHA256SUMS.asc ] || ! gpg --verify SHA256SUMS.asc SHA256SUMS >/dev/null 2>&1 || die "SHA256SUMS is already signed on $BR."
-  say "3/4  Signing"
-  printf '  You are signing:  %s\n' "$(cat SHA256SUMS)"
-  printf '  It must match the SHA-256 Claude gave you for this release. If it differs, do not sign.\n'
-  read -r -p "  Type yes to sign it with $FPR: " a; [ "$a" = yes ] || die "not signed (you did not type yes)."
-  gpg --local-user "$FPR" --armor --detach-sign --yes --output SHA256SUMS.asc SHA256SUMS
-  check_sig
-  say "4/4  Sending the signature to GitHub ($BR)"
-  git add SHA256SUMS.asc
-  git commit -q -m "Signed SHA256SUMS for $TAG (maintainer key ${FPR:0:8} ${FPR:8:8} ${FPR:16:8} ${FPR:24:8} ${FPR:32:8})"
-  git push -q "$REMOTE" "HEAD:refs/heads/$BR" || die "the push failed; the signature is committed here, run: git push $REMOTE HEAD:$BR"
-  ok "pushed $(git log --oneline -1)"
-  git checkout -q "$BACK" 2>/dev/null || true
-  say "Done. Tell Claude \"signed\". Claude checks the signature, pushes main and the tag $TAG, then you run: bash tools/release.sh publish $V"
-  ;;
-publish)
-  need gpg "Install GnuPG."; need gh "Install the GitHub CLI and run gh auth login."
-  clean_tree
-  say "1/5  Getting $TAG and main from GitHub"
-  git fetch -q --tags "$REMOTE" main
-  RT=$(git ls-remote "$REMOTE" "refs/tags/$TAG^{}" | cut -f1); [ -n "$RT" ] || RT=$(git ls-remote "$REMOTE" "refs/tags/$TAG" | cut -f1)
-  [ -n "$RT" ] || die "the tag $TAG is not on GitHub yet."
-  git fetch -q "$REMOTE" "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || true
-  [ "$(git rev-parse "$TAG^{commit}")" = "$RT" ] || die "your local tag $TAG is not the one on GitHub."
-  [ "$(git rev-parse "$TAG^{commit}")" = "$(git rev-parse FETCH_HEAD)" ] || die "main on GitHub is not at $TAG."
-  git checkout -q --detach "$TAG"; ok "main and $TAG are $(git log --oneline -1)"
-  say "2/5  Checking the files and the signature"
-  check_files "$V"; check_sig
-  ! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1 || die "a GitHub release $TAG already exists."
-  PREV=$(gh release list -R "$REPO" --limit 1 --json tagName --jq '.[0].tagName' 2>/dev/null || true)
-  say "3/5  Making the GitHub release $TAG"
-  RAW="https://github.com/$REPO/raw/$TAG"
-  NOTES=$(printf 'SHA256 of dryrun.html: `%s`\nContent ID: `%s`\n\nSigned with the release key %s (see SECURITY.md). Check before use:\n```\ngpg --verify SHA256SUMS.asc SHA256SUMS\nsha256sum -c SHA256SUMS\n```\n\n[dryrun.html](%s/dryrun.html)\n[SHA256SUMS](%s/SHA256SUMS)\n[SHA256SUMS.asc](%s/SHA256SUMS.asc)\n[CID.txt](%s/CID.txt)\n' \
-    "$(sha dryrun.html)" "$(tr -d '\n' < CID.txt)" "$FPR" "$RAW" "$RAW" "$RAW" "$RAW")
-  gh release create "$TAG" -R "$REPO" --verify-tag --title "$TAG" --latest --notes "$NOTES" dryrun.html SHA256SUMS SHA256SUMS.asc CID.txt >/dev/null
-  ok "released: https://github.com/$REPO/releases/tag/$TAG"
-  say "4/5  Marking $PREV as superseded"
-  if [ -n "$PREV" ] && [ "$PREV" != "$TAG" ]; then
-    B=$(gh release view "$PREV" -R "$REPO" --json body --jq .body)
-    case "$B" in "Superseded by"*) ok "$PREV already says so";; *) gh release edit "$PREV" -R "$REPO" --notes "Superseded by $TAG.
+[ "$MODE" = pending ] || say "1/5  Getting main from GitHub"
+git fetch -q "$REMOTE" main || die "could not fetch main."
+M=$(git rev-parse FETCH_HEAD)
+PV=$(git show "$M:$VERSION_FILE" 2>/dev/null | grep -o "$VERSION_RE" | head -1 | grep -o "[0-9][0-9.]*[0-9]" | tail -1 || true)
+[ -n "$PV" ] || die "could not read the version in main's $VERSION_FILE."
+if [ "$MODE" = pending ]; then
+  gh release view "v$PV" -R "$REPO" >/dev/null 2>&1 || echo "$PV"
+  exit 0
+fi
+ok "main is $(git log --oneline -1 "$M")"
+if [ -z "$V" ]; then
+  V=$PV
+  if gh release view "v$V" -R "$REPO" >/dev/null 2>&1; then say "$NAME $V is already released. Nothing to do."; exit 0; fi
+fi
+TAG=v$V
+[ "$PV" = "$V" ] || die "main's $VERSION_FILE says it is $PV, not $V. Push the release to main first."
+for c in ${CHECKS[@]+"${CHECKS[@]}"}; do
+  f=${c%%|*}; t=${c#*|}; t=${t//\{V\}/$V}
+  git show "$M:$f" 2>/dev/null | grep -qF -- "$t" || die "main's $f does not have: $t"
+done
+ok "main is $NAME $V ($VERSION_FILE${CHECKS[0]+ and ${#CHECKS[@]} more checks})"
+! gh release view "$TAG" -R "$REPO" >/dev/null 2>&1 || die "a GitHub release $TAG already exists."
 
-$B" >/dev/null; ok "$PREV now starts with \"Superseded by $TAG\"";; esac
-  else ok "no earlier release to mark"; fi
-  say "5/5  Timestamp (OpenTimestamps)"
-  if command -v ots >/dev/null 2>&1; then
-    mkdir -p .release/"$TAG"; cp SHA256SUMS .release/"$TAG"/
-    ( cd .release/"$TAG" && rm -f SHA256SUMS.ots && ots stamp SHA256SUMS ) && gh release upload "$TAG" -R "$REPO" .release/"$TAG"/SHA256SUMS.ots >/dev/null \
-      && ok "stamped and attached SHA256SUMS.ots. In a few hours run: bash tools/release.sh stamp $V" \
-      || printf '  The timestamp did not go through (the release itself is done). Try again later: bash tools/release.sh stamp %s\n' "$V"
-  else printf '  ots is not installed (pip install opentimestamps-client); skipped. The release itself is done.\n'; fi
-  git checkout -q - 2>/dev/null || true
-  say "Done. Tell Claude \"published\" so it can check the release files."
-  ;;
-stamp)
-  need ots "Install it with: pip install opentimestamps-client"; need gh "Install the GitHub CLI."
-  D=.release/"$TAG"; mkdir -p "$D"
-  if [ ! -f "$D/SHA256SUMS" ]; then gh release download "$TAG" -R "$REPO" -D "$D" -p SHA256SUMS -p SHA256SUMS.ots --clobber 2>/dev/null || true; fi
-  [ -f "$D/SHA256SUMS" ] || gh release download "$TAG" -R "$REPO" -D "$D" -p SHA256SUMS --clobber
-  if [ ! -f "$D/SHA256SUMS.ots" ]; then ( cd "$D" && ots stamp SHA256SUMS ); gh release upload "$TAG" -R "$REPO" "$D/SHA256SUMS.ots" --clobber >/dev/null; say "Stamped now. Run this again in a few hours to add the Bitcoin block."; exit 0; fi
-  say "Upgrading the timestamp"
-  ( cd "$D" && ots upgrade SHA256SUMS.ots ) || true   # it says "not complete" while the stamp waits for a block
-  BLOCK=$( cd "$D" && ots info SHA256SUMS.ots 2>/dev/null | grep -o 'BitcoinBlockHeaderAttestation([0-9]*)' | grep -o '[0-9][0-9]*' | sort -n | head -1 || true )
-  if [ -n "$BLOCK" ]; then
-    gh release upload "$TAG" -R "$REPO" "$D/SHA256SUMS.ots" --clobber >/dev/null
-    ok "SHA256SUMS.ots now proves SHA256SUMS existed by Bitcoin block $BLOCK; the release file is updated"
-    say "Done. Tell Claude \"stamped, block $BLOCK\"."
-  else
-    say "Not in a Bitcoin block yet (this usually takes a few hours). Run the same command again later."
-  fi
-  ;;
-*) die "unknown step \"$CMD\": use sign, publish or stamp." ;;
-esac
+say "2/5  The checksums of main's site files, and the live site"
+D=".release/$TAG"; mkdir -p "$D"; rm -f "$D/SHA256SUMS" "$D/SHA256SUMS.asc" "$D/notes.md"; rm -rf "$D/check" "$D/assets"
+paths=(); for f in "${SITE_FILES[@]}"; do paths+=("$P$f"); done
+n=0
+while IFS= read -r g; do
+  f=${g#"$P"}
+  h=$(git show "$M:$g" | sha)
+  live=$(curl -fsS -H "Cache-Control: no-cache" "$SITE/$f?$(date +%s)" | sha) || die "could not download $SITE/$f."
+  [ "$h" = "$live" ] || die "$f on the site is not the one in main. The site may not have deployed yet: wait until the Pages run is green, then run this again."
+  printf '%s  %s\n' "$h" "$f" >> "$D/SHA256SUMS"; n=$((n + 1))
+done < <(git ls-tree -r --name-only "$M" -- "${paths[@]}" | LC_ALL=C sort)
+[ "$n" -ge 1 ] || die "no site files found in main."
+ok "$n site files: every one on the live site is the one in main"
+
+say "3/5  Signing"
+printf '  You are signing the checksums of %s files of main %s (the live site). The first lines:\n\n' "$n" "${M:0:7}"
+head -5 "$D/SHA256SUMS" | sed 's/^/    /'
+printf '    ...\n\n  SHA256SUMS itself: %s\n  If Claude gave you a checksum for this release, it must be this one.\n' "$(sha < "$D/SHA256SUMS")"
+if [ "${RELEASE_YES:-}" = 1 ]; then ok "you said yes in release"; else
+  read -r -p "  Type yes to sign it with $FPR: " a; [ "$a" = yes ] || die "not signed (you did not type yes)."; fi
+gpg --local-user "$FPR" --armor --detach-sign --yes --output "$D/SHA256SUMS.asc" "$D/SHA256SUMS"
+gpg --status-fd 1 --verify "$D/SHA256SUMS.asc" "$D/SHA256SUMS" 2>/dev/null | grep -q "^\[GNUPG:\] VALIDSIG $FPR " || die "the new signature does not verify as made by $FPR."
+ok "SHA256SUMS.asc is a good signature by $FPR"
+
+say "4/5  Making the GitHub release $TAG"
+lc=$(printf '%s' "$NAME" | tr '[:upper:]' '[:lower:]')
+git show "$M:CHANGELOG.md" 2>/dev/null | awk -v v="## $V" '$0 == v {on = 1; next} on && /^## / {exit} on' > "$D/notes.md" || true
+if [ -s "$D/notes.md" ]; then
+  ok "notes: the \"## $V\" part of CHANGELOG.md"
+elif gh api -H "Accept: application/vnd.github.raw" "repos/$NOTES_REPO/contents/releases/$lc/$lc-$TAG-notes.md" > "$D/notes.md" 2>/dev/null && [ -s "$D/notes.md" ]; then
+  ok "notes: releases/$lc/$lc-$TAG-notes.md from the notebook"
+else
+  printf '%s %s\n' "$NAME" "$TAG" > "$D/notes.md"
+  ok "notes: no CHANGELOG part or notebook notes for $V, so just the name and the checksums (edit them on GitHub later if you like)"
+fi
+printf '\nSHA256SUMS (signed with the release key %s; the public key is in the repository) lists every file of the site at this version:\n```\ngpg --verify SHA256SUMS.asc SHA256SUMS\n```\n' "$FPR" >> "$D/notes.md"
+files=("$D/SHA256SUMS" "$D/SHA256SUMS.asc")
+for a in ${ASSETS[@]+"${ASSETS[@]}"}; do   # more files from main to attach (release.conf: ASSETS)
+  mkdir -p "$D/assets"; git show "$M:$a" > "$D/assets/${a##*/}" 2>/dev/null || die "main has no $a (release.conf ASSETS)."; files+=("$D/assets/${a##*/}")
+done
+gh release create "$TAG" -R "$REPO" --target "$M" --title "$NAME $TAG" --notes-file "$D/notes.md" "${files[@]}" >/dev/null
+ok "released: https://github.com/$REPO/releases/tag/$TAG"
+
+say "5/5  Checking the release"
+mkdir -p "$D/check"
+gh release download "$TAG" -R "$REPO" -D "$D/check" -p SHA256SUMS -p SHA256SUMS.asc >/dev/null || die "could not download the release files again."
+cmp -s "$D/check/SHA256SUMS" "$D/SHA256SUMS" && cmp -s "$D/check/SHA256SUMS.asc" "$D/SHA256SUMS.asc" || die "the files on the release page are not the ones signed here."
+gpg --status-fd 1 --verify "$D/check/SHA256SUMS.asc" "$D/check/SHA256SUMS" 2>/dev/null | grep -q "^\[GNUPG:\] VALIDSIG $FPR " || die "the signature on the release page does not verify."
+git fetch -q "$REMOTE" "refs/tags/$TAG:refs/tags/$TAG" 2>/dev/null || true
+[ "$(git rev-parse "$TAG^{commit}" 2>/dev/null || true)" = "$M" ] || die "the tag $TAG on GitHub is not main ($M)."
+ok "the release page holds the signed checksums, and $TAG is main ${M:0:7}"
+say "Done. Tell Claude \"published\"."

@@ -13,12 +13,21 @@
 ## Steps
 
 1. **Build and test** (Claude): `npm ci`, `npm run build`, `npm test`, then the mutation run on the money code (`npm run mutation`). Every test passes; every surviving change is looked at.
-2. **Freeze** (Claude): `SHA256SUMS` (`sha256sum dryrun.html > SHA256SUMS`), `CID.txt`, this file's "Current build", the README changelog, and the `sw.js` cache name (`dryrun-<version>`) all name the same build. Pushed to the release branch.
-3. **Sign** (the owner, on his own computer): `VF_BRANCH=<branch> bash tools/release.sh sign <version>`. The script checks the files, shows the SHA-256 to compare, signs `SHA256SUMS` with the release key and pushes `SHA256SUMS.asc`.
-4. **Check and merge** (Claude): verifies the signature, and pushes `main` only with the owner's OK.
-5. **Tag** (the owner): pushes the tag `v<version>`.
-6. **Publish** (the owner): `bash tools/release.sh publish <version>` makes the GitHub release with `dryrun.html`, `SHA256SUMS`, `SHA256SUMS.asc`, `CID.txt`, and stamps it with OpenTimestamps. Later: `bash tools/release.sh stamp <version>`.
-7. **GitHub Pages** (the owner, once): Settings > Pages > Deploy from a branch > `main`, folder `/` (root). The page is then at `https://random21m.github.io/dryrun/`.
+2. **Freeze** (Claude): `SHA256SUMS` (`sha256sum dryrun.html > SHA256SUMS`), `CID.txt`, this file's "Current build", the README changelog, and the `sw.js` cache name (`dryrun-<version>`) all name the same build.
+3. **Merge** (Claude, only with the owner's OK): `main` deploys the page (GitHub Pages, `main`, folder `/`).
+4. **Release** (the owner, one paste in any terminal on his computer, the same line for every project):
+
+   ```bash
+   bash <(gh api -H "Accept: application/vnd.github.raw" repos/Random21m/second-brain/contents/how-to/release-kit/release-all.sh)
+   ```
+
+   For DRYRUN it runs `tools/release.sh` from main: it reads the version on the page, checks `sw.js`, checks the live
+   `dryrun.html` is main's, signs `SHA256SUMS` with the release key (gpg asks for the key's passphrase, if it has one; the
+   key never leaves his computer), and makes the GitHub release `v<version>` with `SHA256SUMS`, `SHA256SUMS.asc`,
+   `dryrun.html` and `CID.txt`, then checks it. DRYRUN's details are in `tools/release.conf`; the script is the same in
+   every project. By hand, in a clone: `bash tools/release.sh`. Test: `bash tests/release_script_test.sh`.
+
+Releases up to 1.1.0 were signed before the merge (`release.sh sign` / `publish`); their files are on the release pages.
 
 ## The CID
 

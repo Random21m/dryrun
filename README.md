@@ -4,6 +4,8 @@
 
 Practise SeedSigner safely: a simulator to rehearse every step, plus a helper to check your backup.
 
+### [→ Open DRYRUN](https://random21m.github.io/dryrun/)
+
 DRYRUN is one HTML file. Open `dryrun.html` in a browser, on a computer that is offline. It makes no network request, tracks nothing and stores no seed.
 
 > **DRYRUN is an unofficial practice tool, not made by or connected to SeedSigner.** The real project is at [seedsigner.com](https://seedsigner.com) ([code](https://github.com/SeedSigner/seedsigner)).
@@ -51,6 +53,16 @@ The signature must be by `2509 D115 03B7 2CBF BCB5  408F 4B72 9F05 6A52 9340` (s
 - **1.0.2**: a fresh start of the repository: one history, the logo, nothing else changed in the page.
 - **1.0.1**: the DRYRUN logo, a coral 3D die, as the header and tab icon.
 - **1.0.0** (Thu Nov 26, 2026): first release. The SeedSigner practice device with lessons (coral keys), the dice / coin / card check, the backup check (words only; a list number must sit on its word; words read from their first letters are named) with the seed's SeedQR drawn with the same mask as SeedSigner, printable templates, short guides, BLOCKHORIZON's colours, an offline copy that leaves other pages' copies alone. Tests: build 13, core 201, screens 18, simulator 274, offline 7, the money test, and a mutation run on the money code.
+
+## Support
+
+DRYRUN is free and stays free. If it helped you, you can send a tip over Lightning:
+
+<img src="docs/support-qr.svg" alt="QR code for the Lightning address below" width="220">
+
+`npub1vj8zjhnmkhekv93e2xmrz7kfwuxq25vrzw53u4dqhwd2lp5smvks3mwu2n@npub.cash`
+
+(An npub.cash Lightning address: scan the QR code or paste the address into any Lightning wallet. Be wary of any other "DRYRUN support" address.)
 
 ## License
 
